@@ -7,7 +7,8 @@ import (
 
 	"github.com/dovydasdo/psec/config"
 	r "github.com/dovydasdo/psec/pkg/request_context"
-	savecontext "github.com/dovydasdo/psec/pkg/save_context"
+	sc "github.com/dovydasdo/psec/pkg/save_context"
+	uc "github.com/dovydasdo/psec/pkg/util_context"
 	"github.com/dovydasdo/psec/util/logger"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -18,8 +19,9 @@ const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disab
 
 type PSEC struct {
 	rctx   r.RequestContextInterface
-	sctx   savecontext.Saver
-	cFunc  func(c r.RequestContextInterface, s savecontext.Saver) error
+	sctx   sc.Saver
+	uctx   uc.UtilInterface
+	cFunc  func(c r.RequestContextInterface, s sc.Saver, u uc.UtilInterface) error
 	cfg    *config.Conf
 	logger logger.Logger
 }
@@ -27,6 +29,7 @@ type PSEC struct {
 func New() *PSEC {
 	ec := &PSEC{
 		rctx:   r.New(),
+		uctx:   uc.New(),
 		logger: *logger.New(true),
 	}
 	return ec
@@ -52,11 +55,11 @@ func (c *PSEC) SetPSQLSaver() *PSEC {
 		c.logger.Fatal().Err(err).Msg("DB connection start failure")
 	}
 
-	c.sctx = savecontext.NewPSQLSaver(db)
+	c.sctx = sc.NewPSQLSaver(db)
 	return c
 }
 
-func (c *PSEC) AddStartFunc(startFunc func(c r.RequestContextInterface, s savecontext.Saver) error) *PSEC {
+func (c *PSEC) AddStartFunc(startFunc func(c r.RequestContextInterface, s sc.Saver, u uc.UtilInterface) error) *PSEC {
 	c.cFunc = startFunc
 	return c
 }
@@ -71,5 +74,5 @@ func (c *PSEC) Start() error {
 		return errors.New("no stat funcion has been porvided")
 	}
 
-	return c.cFunc(c.rctx, c.sctx)
+	return c.cFunc(c.rctx, c.sctx, c.uctx)
 }
