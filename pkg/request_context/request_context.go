@@ -8,10 +8,14 @@ import (
 type RequestContextInterface interface {
 	PerformRequestInstruction(ins RequestInstruction) error
 	GetRequestAgent() (interface{}, error)
+	RegisterProxyAgent(a ProxyGetter)
+	SetBinPath(path string)
 }
 
 type DefaultRequestContext struct {
-	Page *rod.Page
+	Page       *rod.Page
+	ProxyAgent ProxyGetter
+	BinPath    string
 	//TODO: some prox implmentation
 }
 
@@ -21,8 +25,17 @@ func New() *DefaultRequestContext {
 	return c
 }
 
+func (r *DefaultRequestContext) SetBinPath(path string) {
+	r.BinPath = path
+}
+
 func (r *DefaultRequestContext) Initialize() {
-	u := launcher.New().Leakless(true).Headless(false).MustLaunch()
+	l := launcher.New()
+	if r.BinPath != "" {
+		l.Bin(r.BinPath)
+	}
+
+	u := l.Leakless(true).Headless(false).MustLaunch()
 	r.Page = rod.New().ControlURL(u).MustConnect().MustPage("")
 }
 
@@ -34,4 +47,8 @@ func (r *DefaultRequestContext) PerformRequestInstruction(ins RequestInstruction
 
 func (r *DefaultRequestContext) GetRequestAgent() (interface{}, error) {
 	return r.Page, nil
+}
+
+func (r *DefaultRequestContext) RegisterProxyAgent(a ProxyGetter) {
+	r.ProxyAgent = a
 }
