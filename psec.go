@@ -60,6 +60,11 @@ func (c *PSEC) SetPSQLSaver() *PSEC {
 	return c
 }
 
+func (c *PSEC) InitRequestContext() *PSEC {
+	c.rctx.Initialize()
+	return c
+}
+
 func (c *PSEC) AddStartFunc(startFunc func(c r.RequestContextInterface, s sc.Saver, u uc.UtilInterface) error) *PSEC {
 	c.cFunc = startFunc
 	return c

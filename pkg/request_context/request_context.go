@@ -10,6 +10,7 @@ type RequestContextInterface interface {
 	GetRequestAgent() (interface{}, error)
 	RegisterProxyAgent(a ProxyGetter)
 	SetBinPath(path string)
+	Initialize()
 }
 
 type DefaultRequestContext struct {
@@ -21,7 +22,6 @@ type DefaultRequestContext struct {
 
 func New() *DefaultRequestContext {
 	c := &DefaultRequestContext{}
-	c.Initialize()
 	return c
 }
 
@@ -35,7 +35,7 @@ func (r *DefaultRequestContext) Initialize() {
 		l.Bin(r.BinPath)
 	}
 
-	u := l.Leakless(true).Headless(false).MustLaunch()
+	u := l.Leakless(true).Headless(true).MustLaunch()
 	r.Page = rod.New().ControlURL(u).MustConnect().MustPage("")
 }
 
