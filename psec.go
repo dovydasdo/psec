@@ -32,6 +32,7 @@ func New() *PSEC {
 		uctx:   uc.New(),
 		logger: *logger.New(true),
 	}
+
 	return ec
 }
 

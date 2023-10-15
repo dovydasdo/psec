@@ -1,31 +1,37 @@
 package requestcontext
 
-import "github.com/go-rod/rod"
+import (
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
+)
 
 type RequestContextInterface interface {
 	PerformRequestInstruction(ins RequestInstruction) error
 	GetRequestAgent() (interface{}, error)
 }
 
-type DefaltRequestContext struct {
+type DefaultRequestContext struct {
 	Page *rod.Page
 	//TODO: some prox implmentation
 }
 
-func New() *DefaltRequestContext {
-	return &DefaltRequestContext{}
+func New() *DefaultRequestContext {
+	c := &DefaultRequestContext{}
+	c.Initialize()
+	return c
 }
 
-func (r *DefaltRequestContext) Initialise() {
-
+func (r *DefaultRequestContext) Initialize() {
+	u := launcher.New().Leakless(true).Headless(false).MustLaunch()
+	r.Page = rod.New().ControlURL(u).MustConnect().MustPage("")
 }
 
-func (r *DefaltRequestContext) PerformRequestInstruction(ins RequestInstruction) error {
+func (r *DefaultRequestContext) PerformRequestInstruction(ins RequestInstruction) error {
 	r.Page.Navigate(ins.URL)
 	r.Page.MustWaitDOMStable()
 	return nil
 }
 
-func (r *DefaltRequestContext) GetRequestAgent() (interface{}, error) {
+func (r *DefaultRequestContext) GetRequestAgent() (interface{}, error) {
 	return r.Page, nil
 }
