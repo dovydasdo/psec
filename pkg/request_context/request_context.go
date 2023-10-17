@@ -55,4 +55,5 @@ func (r *DefaultRequestContext) GetRequestAgent() (interface{}, error) {
 
 func (r *DefaultRequestContext) RegisterProxyAgent(a ProxyGetter) {
 	r.ProxyAgent = a
+	a.LoadProxies()
 }
