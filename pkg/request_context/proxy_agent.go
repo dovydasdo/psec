@@ -49,14 +49,13 @@ func (a *PSECProxyAgent) LoadProxies() error {
 		return err
 	}
 
-	//todo: make a call to the api and demarshall the proxies
-
 	a.ActiveProxies = proxies
 	log.Println(responseBody)
 	return nil
 }
 
 func (a *PSECProxyAgent) GetProxy() string {
+	//Temp
 	for _, value := range a.ActiveProxies {
 		return value.Ip
 	}
