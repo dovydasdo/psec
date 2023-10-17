@@ -80,6 +80,11 @@ func (c *PSEC) SetBinPath(path string) *PSEC {
 	return c
 }
 
+func (c *PSEC) SetDefaultProxyAgent() *PSEC {
+	c.rctx.RegisterProxyAgent(r.NewPSECProxyAgent())
+	return c
+}
+
 func (c *PSEC) Start() error {
 	if c.cFunc == nil {
 		return errors.New("no stat funcion has been porvided")

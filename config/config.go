@@ -27,3 +27,17 @@ func New() *Conf {
 
 	return &c
 }
+
+type ProxyConf struct {
+	Address string `env:"PROXY_API_ADDRESS, required"`
+	Port    int    `env:"PROXY_API_PORT, required"`
+}
+
+func NewProxyConfig() *ProxyConf {
+	var c ProxyConf
+	if err := envdecode.StrictDecode(&c); err != nil {
+		log.Fatalf("Failed to decode: %s", err)
+	}
+
+	return &c
+}

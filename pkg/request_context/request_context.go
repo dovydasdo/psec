@@ -35,6 +35,10 @@ func (r *DefaultRequestContext) Initialize() {
 		l.Bin(r.BinPath)
 	}
 
+	if r.ProxyAgent != nil {
+		l.Proxy(r.ProxyAgent.GetProxy())
+	}
+
 	u := l.Leakless(true).Headless(true).MustLaunch()
 	r.Page = rod.New().ControlURL(u).MustConnect().MustPage("")
 }
