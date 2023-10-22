@@ -2,6 +2,7 @@ package requestcontext
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,7 +13,7 @@ import (
 
 type ProxyGetter interface {
 	LoadProxies() error
-	GetProxy() string
+	SetProxy() error
 	//TODO: implement some profiles per site for more reasonable proxy handling
 }
 
@@ -21,6 +22,7 @@ type PSECProxyAgent struct {
 	APIPort       int
 	ActiveProxies Proxies
 	Config        *config.ProxyConf
+	CurrentProxy  Proxy
 }
 
 func NewPSECProxyAgent() *PSECProxyAgent {
@@ -54,10 +56,11 @@ func (a *PSECProxyAgent) LoadProxies() error {
 	return nil
 }
 
-func (a *PSECProxyAgent) GetProxy() string {
-	//Temp
-	for _, value := range a.ActiveProxies {
-		return value.Ip
+func (a *PSECProxyAgent) SetProxy() error {
+	for key, value := range a.ActiveProxies {
+		a.CurrentProxy = value
+		delete(a.ActiveProxies, key)
+		return nil
 	}
-	return ""
+	return errors.New("no proxies")
 }
