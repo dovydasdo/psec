@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/imroc/req/v3"
 )
 
@@ -23,7 +24,8 @@ type DefaultRequestContext struct {
 	ProxyAgent ProxyGetter
 	BinPath    string
 	HttpClient *http.Client
-	//TODO: some prox implmentation
+	ReqClient  *req.Client
+	State      *CollectionState
 }
 
 func New() *DefaultRequestContext {
@@ -43,6 +45,7 @@ func (r *DefaultRequestContext) Initialize() {
 
 	u := l.Leakless(true).Headless(true).MustLaunch()
 	r.Page = rod.New().ControlURL(u).MustConnect().MustPage("")
+	r.ReqClient = req.C().ImpersonateChrome()
 }
 
 func (r *DefaultRequestContext) PerformRequestInstruction(ins RequestInstruction) error {
@@ -67,26 +70,40 @@ func (r *DefaultRequestContext) SetProxyRouter() {
 	router := r.Page.HijackRequests()
 	//	defer router.Stop()
 	router.MustAdd("*", func(ctx *rod.Hijack) {
+		ctx.Request.Type()
 		if r.HttpClient == nil {
-			client := req.C().ImpersonateChrome()
 			// todo: handle proxy changing for same ctx
 			if r.ProxyAgent != nil {
 				if p, ok := r.ProxyAgent.(*PSECProxyAgent); ok {
-					client.SetProxyURL(fmt.Sprintf("http://%v", p.CurrentProxy.Ip))
+					r.ReqClient.SetProxyURL(fmt.Sprintf("http://%v", p.CurrentProxy.Ip))
 				}
 			}
 			r.HttpClient = &http.Client{
-				Transport: client.Transport,
+				Transport: r.ReqClient.Transport,
 			}
 		}
 
 		ctx.LoadResponse(r.HttpClient, true)
 	})
-	go router.Run()
 
+	go router.Run()
+	go r.Page.EachEvent(func(e *proto.NetworkResponseReceived) {
+		r.State.RequestsMade = append(r.State.RequestsMade, e.Response)
+	})()
 }
 
 func (r *DefaultRequestContext) ChangeProxy() error {
 	r.HttpClient = nil
 	return r.ProxyAgent.SetProxy()
+}
+
+// If this fai1s collection should be terminated
+func (r *DefaultRequestContext) MustLoad(url string, retryCount int) *http.Response {
+	resp, err := r.ReqClient.NewRequest().Get(url)
+	if err != nil {
+		//restart of something
+		return nil
+	}
+
+	return resp.Response
 }
