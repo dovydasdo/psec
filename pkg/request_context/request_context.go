@@ -1,8 +1,11 @@
 package requestcontext
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/http"
+	"regexp"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
@@ -11,7 +14,7 @@ import (
 )
 
 type RequestContextInterface interface {
-	PerformRequestInstruction(ins RequestInstruction) error
+	PerformRequestInstruction(ins RequestInstruction, ctx *context.Context) (string, error)
 	GetRequestAgent() (interface{}, error)
 	RegisterProxyAgent(a ProxyGetter)
 	SetBinPath(path string)
@@ -26,10 +29,14 @@ type DefaultRequestContext struct {
 	HttpClient *http.Client
 	ReqClient  *req.Client
 	State      *CollectionState
+	StateCheck interface{}
+	CancelF    context.CancelFunc
+	Filter     *regexp.Regexp
 }
 
 func New() *DefaultRequestContext {
 	c := &DefaultRequestContext{}
+	c.Filter = regexp.MustCompile(".*")
 	return c
 }
 
@@ -43,15 +50,45 @@ func (r *DefaultRequestContext) Initialize() {
 		l.Bin(r.BinPath)
 	}
 
-	u := l.Leakless(true).Headless(true).MustLaunch()
+	u := l.Leakless(true).Headless(false).MustLaunch()
 	r.Page = rod.New().ControlURL(u).MustConnect().MustPage("")
 	r.ReqClient = req.C().ImpersonateChrome()
+	r.State = &CollectionState{}
+	r.State.RequestsMade = make([]*proto.NetworkResponse, 0)
+	r.SetProxyRouter() //test
 }
 
-func (r *DefaultRequestContext) PerformRequestInstruction(ins RequestInstruction) error {
+func (r *DefaultRequestContext) PerformRequestInstruction(ins RequestInstruction, ctx *context.Context) (string, error) {
+	key := ReqCtxKey{Id: ins.URL}
+
+	rctx := (*ctx).Value(key)
+
+	cctx, cancel := context.WithCancel(*ctx)
+	r.CancelF = cancel
+
+	if ctxVal, ok := rctx.(ReqCtxVal); ok {
+		if ctxVal.DoneF == nil {
+			//todo add some default behaviour... maybe
+			return "", fmt.Errorf("no done function provided, use http client if no complex loading is required")
+		}
+
+		r.StateCheck = ctxVal.DoneF
+	} else {
+		log.Println("failed to get ctx val")
+	}
+
+	r.Filter = &ins.Filter
+
+	r.State.LoadState = PROCESSING
 	r.Page.Navigate(ins.URL)
-	r.Page.MustWaitDOMStable()
-	return nil
+	<-cctx.Done()
+
+	//Cleanup
+	r.CancelF = nil
+	r.StateCheck = nil
+	r.Filter = regexp.MustCompile(".*")
+
+	return r.Page.HTML()
 }
 
 func (r *DefaultRequestContext) GetRequestAgent() (interface{}, error) {
@@ -72,7 +109,6 @@ func (r *DefaultRequestContext) SetProxyRouter() {
 	router.MustAdd("*", func(ctx *rod.Hijack) {
 		ctx.Request.Type()
 		if r.HttpClient == nil {
-			// todo: handle proxy changing for same ctx
 			if r.ProxyAgent != nil {
 				if p, ok := r.ProxyAgent.(*PSECProxyAgent); ok {
 					r.ReqClient.SetProxyURL(fmt.Sprintf("http://%v", p.CurrentProxy.Ip))
@@ -83,27 +119,49 @@ func (r *DefaultRequestContext) SetProxyRouter() {
 			}
 		}
 
-		ctx.LoadResponse(r.HttpClient, true)
+		if r.State.LoadState != PROCESSING {
+			ctx.Response.Fail(proto.NetworkErrorReasonAborted)
+			return
+		}
+
+		if r.Filter.MatchString(ctx.Request.URL().String()) {
+			log.Println("performing : ", ctx.Request.URL().String())
+			ctx.LoadResponse(r.HttpClient, true)
+		} else {
+			log.Println(r.Filter.String(), " === ", ctx.Request.URL())
+			log.Println("failed to match regex")
+		}
 	})
 
 	go router.Run()
 	go r.Page.EachEvent(func(e *proto.NetworkResponseReceived) {
 		r.State.RequestsMade = append(r.State.RequestsMade, e.Response)
+
+		// log.Println("req made: ", len(r.State.RequestsMade))
+		// log.Println("url: ", e.Response.URL)
+		if doneF, ok := r.StateCheck.(DoneFunc); ok {
+			state := doneF(e.Response, r.State)
+			switch state {
+			case SUCCESS:
+				r.State.LoadState = DONE
+				r.CancelF()
+			case TIMEOUT:
+				r.State.LoadState = FAILED
+				r.CancelF()
+			case BLOCKED:
+				r.State.LoadState = FAILED
+				r.CancelF()
+			case CONTINUE:
+				r.State.LoadState = PROCESSING
+			default:
+				log.Println("state not recognised, bad...")
+			}
+
+		}
 	})()
 }
 
 func (r *DefaultRequestContext) ChangeProxy() error {
 	r.HttpClient = nil
 	return r.ProxyAgent.SetProxy()
-}
-
-// If this fai1s collection should be terminated
-func (r *DefaultRequestContext) MustLoad(url string, retryCount int) *http.Response {
-	resp, err := r.ReqClient.NewRequest().Get(url)
-	if err != nil {
-		//restart of something
-		return nil
-	}
-
-	return resp.Response
 }
