@@ -52,13 +52,14 @@ func (a *PSECProxyAgent) LoadProxies() error {
 	}
 
 	a.ActiveProxies = proxies
-	log.Println(responseBody)
+	log.Println(string(responseBody[:]))
 	return nil
 }
 
 func (a *PSECProxyAgent) SetProxy() error {
 	for key, value := range a.ActiveProxies {
 		a.CurrentProxy = value
+		log.Println("current pxy: ", a.CurrentProxy.Ip)
 		delete(a.ActiveProxies, key)
 		return nil
 	}

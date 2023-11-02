@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
@@ -20,10 +21,13 @@ type RequestContextInterface interface {
 	SetBinPath(path string)
 	Initialize()
 	ChangeProxy() error
+	GetState() *CollectionState
+	PerformSimpleRequest(req *http.Request) (*http.Response, error)
 }
 
 type DefaultRequestContext struct {
 	Page       *rod.Page
+	Browser    *rod.Browser
 	ProxyAgent ProxyGetter
 	BinPath    string
 	HttpClient *http.Client
@@ -40,6 +44,10 @@ func New() *DefaultRequestContext {
 	return c
 }
 
+func (r *DefaultRequestContext) GetState() *CollectionState {
+	return r.State
+}
+
 func (r *DefaultRequestContext) SetBinPath(path string) {
 	r.BinPath = path
 }
@@ -51,10 +59,19 @@ func (r *DefaultRequestContext) Initialize() {
 	}
 
 	u := l.Leakless(true).Headless(false).MustLaunch()
-	r.Page = rod.New().ControlURL(u).MustConnect().MustPage("")
+	r.Browser = rod.New().ControlURL(u).MustConnect()
+	r.Page = r.Browser.MustPage("")
 	r.ReqClient = req.C().ImpersonateChrome()
 	r.State = &CollectionState{}
-	r.State.RequestsMade = make([]*proto.NetworkResponse, 0)
+	r.State.RequestsMade = make([]*proto.NetworkResponseReceived, 0)
+	r.SetProxyRouter() //test
+}
+
+func (r *DefaultRequestContext) InitSession() {
+	r.Page = r.Browser.MustPage("")
+	r.ReqClient = req.C().ImpersonateChrome()
+	r.State = &CollectionState{}
+	r.State.RequestsMade = make([]*proto.NetworkResponseReceived, 0)
 	r.SetProxyRouter() //test
 }
 
@@ -63,25 +80,43 @@ func (r *DefaultRequestContext) PerformRequestInstruction(ins RequestInstruction
 
 	rctx := (*ctx).Value(key)
 
-	cctx, cancel := context.WithCancel(*ctx)
-	r.CancelF = cancel
+	for i := 0; i < 20; i++ {
+		cctx, cancel := context.WithDeadline(*ctx, time.Now().Add(30*time.Second))
+		r.CancelF = cancel
 
-	if ctxVal, ok := rctx.(ReqCtxVal); ok {
-		if ctxVal.DoneF == nil {
-			//todo add some default behaviour... maybe
-			return "", fmt.Errorf("no done function provided, use http client if no complex loading is required")
+		if ctxVal, ok := rctx.(ReqCtxVal); ok {
+			if ctxVal.DoneF == nil {
+				//todo add some default behaviour... maybe
+				return "", fmt.Errorf("no done function provided, use http client if no complex loading is required")
+			}
+
+			r.StateCheck = ctxVal.DoneF
+		} else {
+			log.Println("failed to get ctx val")
 		}
 
-		r.StateCheck = ctxVal.DoneF
-	} else {
-		log.Println("failed to get ctx val")
+		r.Filter = &ins.Filter
+
+		r.State.LoadState = PROCESSING
+		go r.Page.Navigate(ins.URL)
+		<-cctx.Done()
+		if r.State.LoadState == DONE {
+			break
+		}
+
+		if r.State.LoadState == PROCESSING {
+			log.Println("timedout")
+		}
+
+		if r.State.LoadState == FAILED {
+			log.Println("blocked")
+		}
+
+		r.ProxyAgent.SetProxy()
+		r.Page.Close()
+		r.HttpClient = nil
+		r.InitSession()
 	}
-
-	r.Filter = &ins.Filter
-
-	r.State.LoadState = PROCESSING
-	r.Page.Navigate(ins.URL)
-	<-cctx.Done()
 
 	//Cleanup
 	r.CancelF = nil
@@ -99,7 +134,7 @@ func (r *DefaultRequestContext) RegisterProxyAgent(a ProxyGetter) {
 	r.ProxyAgent = a
 	a.LoadProxies()
 	a.SetProxy()
-	r.SetProxyRouter()
+	// r.SetProxyRouter()
 }
 
 func (r *DefaultRequestContext) SetProxyRouter() {
@@ -135,12 +170,14 @@ func (r *DefaultRequestContext) SetProxyRouter() {
 
 	go router.Run()
 	go r.Page.EachEvent(func(e *proto.NetworkResponseReceived) {
-		r.State.RequestsMade = append(r.State.RequestsMade, e.Response)
+
+		r.State.RequestsMade = append(r.State.RequestsMade, e)
 
 		// log.Println("req made: ", len(r.State.RequestsMade))
 		// log.Println("url: ", e.Response.URL)
 		if doneF, ok := r.StateCheck.(DoneFunc); ok {
 			state := doneF(e.Response, r.State)
+			// log.Println("state: ", state)
 			switch state {
 			case SUCCESS:
 				r.State.LoadState = DONE
@@ -164,4 +201,8 @@ func (r *DefaultRequestContext) SetProxyRouter() {
 func (r *DefaultRequestContext) ChangeProxy() error {
 	r.HttpClient = nil
 	return r.ProxyAgent.SetProxy()
+}
+
+func (r *DefaultRequestContext) PerformSimpleRequest(req *http.Request) (*http.Response, error) {
+	return r.HttpClient.Do(req)
 }

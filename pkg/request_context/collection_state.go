@@ -12,6 +12,6 @@ const (
 )
 
 type CollectionState struct {
-	RequestsMade []*proto.NetworkResponse
+	RequestsMade []*proto.NetworkResponseReceived
 	LoadState    int
 }
