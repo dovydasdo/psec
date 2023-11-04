@@ -20,8 +20,11 @@ type ConfDB struct {
 }
 
 type ProxyConf struct {
-	Address string `env:"PROXY_API_ADDRESS, required"`
-	Port    int    `env:"PROXY_API_PORT, required"`
+	Address  string `env:"PROXY_API_ADDRESS, required"`
+	Port     int    `env:"PROXY_API_PORT, required"`
+	AuthName string `env:"PROXY_AUTH_NAME"`
+	AuthHost string `env:"PROXY_AUTH_HOST"`
+	AuthPass string `env:"PROXY_AUTH_PASS"`
 }
 
 type ConfTurso struct {
