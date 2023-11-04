@@ -2,7 +2,6 @@ package psec
 
 import (
 	"errors"
-	"fmt"
 	"log"
 
 	"github.com/dovydasdo/psec/config"
@@ -10,9 +9,6 @@ import (
 	sc "github.com/dovydasdo/psec/pkg/save_context"
 	uc "github.com/dovydasdo/psec/pkg/util_context"
 	"github.com/dovydasdo/psec/util/logger"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
@@ -42,21 +38,7 @@ func (c *PSEC) SetPSQLSaver() *PSEC {
 		return c
 	}
 
-	var logLevel gormlogger.LogLevel
-	if c.cfg.DB.Debug {
-		logLevel = gormlogger.Info
-	} else {
-		logLevel = gormlogger.Error
-	}
-
-	dbString := fmt.Sprintf(fmtDBString, c.cfg.DB.Host, c.cfg.DB.Username, c.cfg.DB.Password, c.cfg.DB.DBName, c.cfg.DB.Port)
-
-	db, err := gorm.Open(postgres.Open(dbString), &gorm.Config{Logger: gormlogger.Default.LogMode(logLevel)})
-	if err != nil {
-		c.logger.Fatal().Err(err).Msg("DB connection start failure")
-	}
-
-	c.sctx = sc.NewPSQLSaver(db)
+	c.sctx = sc.NewPSQLSaver(c.cfg)
 	return c
 }
 
