@@ -34,12 +34,32 @@ func New() *PSEC {
 }
 
 func (c *PSEC) SetPSQLSaver() *PSEC {
+	if c.sctx != nil {
+		c.logger.Warn().Str("db", "psql saver called when saver is already initiated")
+		return c
+	}
+
 	if c.cfg == nil {
 		log.Fatal("config needs to be initialzed before setting a saver")
 		return c
 	}
 
 	c.sctx = sc.NewPSQLSaver(c.cfg)
+	return c
+}
+
+func (c *PSEC) SetSQLiteSaver() *PSEC {
+	if c.sctx != nil {
+		c.logger.Warn().Str("db", "sqlite saver called when saver is already initiated")
+		return c
+	}
+
+	if c.cfg == nil {
+		log.Fatal("config needs to be initialzed before setting a saver")
+		return c
+	}
+
+	c.sctx = sc.NewSQLiteSaver()
 	return c
 }
 
