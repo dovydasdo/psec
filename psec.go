@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 
 	"github.com/dovydasdo/psec/config"
 	r "github.com/dovydasdo/psec/pkg/request_context"
@@ -78,6 +79,15 @@ func (c *PSEC) InitEnvConfig() *PSEC {
 func (c *PSEC) SetBinPath(path string) *PSEC {
 	c.rctx.SetBinPath(path)
 	return c
+}
+
+func (c *PSEC) RegisterProxyAgent(p r.ProxyGetter) *PSEC {
+	c.rctx.RegisterProxyAgent(p)
+	return c
+}
+
+func (c *PSEC) SetBlockFilter(filter *regexp.Regexp) {
+	c.rctx.SetBlockFilter(filter)
 }
 
 func (c *PSEC) SetDefaultProxyAgent() *PSEC {

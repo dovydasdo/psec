@@ -14,7 +14,13 @@ import (
 type ProxyGetter interface {
 	LoadProxies() error
 	SetProxy() error
-	//TODO: implement some profiles per site for more reasonable proxy handling
+	GetAuth() (*ProxyAuth, error)
+}
+
+type ProxyAuth struct {
+	Server   string
+	Username string
+	Password string
 }
 
 type PSECProxyAgent struct {
@@ -30,6 +36,10 @@ func NewPSECProxyAgent() *PSECProxyAgent {
 	return &PSECProxyAgent{
 		Config: c,
 	}
+}
+
+func (a *PSECProxyAgent) GetAuth() (*ProxyAuth, error) {
+	return nil, fmt.Errorf("defautl agent has no auth")
 }
 
 func (a *PSECProxyAgent) LoadProxies() error {
@@ -52,13 +62,14 @@ func (a *PSECProxyAgent) LoadProxies() error {
 	}
 
 	a.ActiveProxies = proxies
-	log.Println(responseBody)
+	log.Println(string(responseBody[:]))
 	return nil
 }
 
 func (a *PSECProxyAgent) SetProxy() error {
 	for key, value := range a.ActiveProxies {
 		a.CurrentProxy = value
+		log.Println("current pxy: ", a.CurrentProxy.Ip)
 		delete(a.ActiveProxies, key)
 		return nil
 	}
