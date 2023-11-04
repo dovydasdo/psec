@@ -2,11 +2,9 @@ package requestcontext
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"regexp"
-	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
@@ -22,20 +20,22 @@ type RequestContextInterface interface {
 	Initialize()
 	ChangeProxy() error
 	GetState() *CollectionState
-	PerformSimpleRequest(req *http.Request) (*http.Response, error)
+	SetBlockFilter(filter *regexp.Regexp)
+	// PerformSimpleRequest(req *http.Request) (*http.Response, error)
 }
 
 type DefaultRequestContext struct {
-	Page       *rod.Page
-	Browser    *rod.Browser
-	ProxyAgent ProxyGetter
-	BinPath    string
-	HttpClient *http.Client
-	ReqClient  *req.Client
-	State      *CollectionState
-	StateCheck interface{}
-	CancelF    context.CancelFunc
-	Filter     *regexp.Regexp
+	Page        *rod.Page
+	Browser     *rod.Browser
+	ProxyAgent  ProxyGetter
+	BinPath     string
+	HttpClient  *http.Client
+	ReqClient   *req.Client
+	State       *CollectionState
+	StateCheck  interface{}
+	CancelF     context.CancelFunc
+	Filter      *regexp.Regexp
+	BlockFilter *regexp.Regexp
 }
 
 func New() *DefaultRequestContext {
@@ -58,17 +58,28 @@ func (r *DefaultRequestContext) Initialize() {
 		l.Bin(r.BinPath)
 	}
 
+	_, err := r.ProxyAgent.GetAuth()
+	if err == nil {
+		l.Proxy("127.0.0.1:24000")
+		log.Println("proxy is set")
+	}
+
 	u := l.Leakless(true).Headless(false).MustLaunch()
 	r.Browser = rod.New().ControlURL(u).MustConnect()
-	r.Page = r.Browser.MustPage("")
+	r.Page = r.Browser.MustPage("").MustSetUserAgent(&proto.NetworkSetUserAgentOverride{
+		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
+		// UserAgentMetadata: &proto.EmulationUserAgentMetadata{},
+	})
 	r.ReqClient = req.C().ImpersonateChrome()
 	r.State = &CollectionState{}
 	r.State.RequestsMade = make([]*proto.NetworkResponseReceived, 0)
-	r.SetProxyRouter() //test
+	r.SetProxyRouter()
 }
 
 func (r *DefaultRequestContext) InitSession() {
-	r.Page = r.Browser.MustPage("")
+	r.Page = r.Browser.MustPage("").MustSetUserAgent(&proto.NetworkSetUserAgentOverride{
+		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
+	})
 	r.ReqClient = req.C().ImpersonateChrome()
 	r.State = &CollectionState{}
 	r.State.RequestsMade = make([]*proto.NetworkResponseReceived, 0)
@@ -76,49 +87,50 @@ func (r *DefaultRequestContext) InitSession() {
 }
 
 func (r *DefaultRequestContext) PerformRequestInstruction(ins RequestInstruction, ctx *context.Context) (string, error) {
-	key := ReqCtxKey{Id: ins.URL}
+	// for i := 0; i < 1; i++ {
+	// 	cctx, cancel := context.WithDeadline(*ctx, time.Now().Add(30*time.Second))
+	// 	r.CancelF = cancel
 
-	rctx := (*ctx).Value(key)
+	// 	if ctxVal, ok := rctx.(ReqCtxVal); ok {
+	// 		if ctxVal.DoneF == nil {
+	// 			//todo add some default behaviour... maybe
+	// 			return "", fmt.Errorf("no done function provided, use http client if no complex loading is required")
+	// 		}
 
-	for i := 0; i < 20; i++ {
-		cctx, cancel := context.WithDeadline(*ctx, time.Now().Add(30*time.Second))
-		r.CancelF = cancel
+	// 		r.StateCheck = ctxVal.DoneF
+	// 	} else {
+	// 		log.Println("failed to get ctx val")
+	// 	}
 
-		if ctxVal, ok := rctx.(ReqCtxVal); ok {
-			if ctxVal.DoneF == nil {
-				//todo add some default behaviour... maybe
-				return "", fmt.Errorf("no done function provided, use http client if no complex loading is required")
-			}
+	// 	r.Filter = &ins.Filter
 
-			r.StateCheck = ctxVal.DoneF
-		} else {
-			log.Println("failed to get ctx val")
-		}
+	// 	r.State.LoadState = PROCESSING
+	// 	go r.Page.Navigate(ins.URL)
+	// 	<-cctx.Done()
+	// 	if r.State.LoadState == DONE {
+	// 		break
+	// 	}
 
-		r.Filter = &ins.Filter
+	// 	if r.State.LoadState == PROCESSING {
+	// 		log.Println("timedout")
+	// 		break
+	// 	}
 
-		r.State.LoadState = PROCESSING
-		go r.Page.Navigate(ins.URL)
-		<-cctx.Done()
-		if r.State.LoadState == DONE {
-			break
-		}
+	// 	if r.State.LoadState == FAILED {
+	// 		log.Println("blocked")
+	// 	}
 
-		if r.State.LoadState == PROCESSING {
-			log.Println("timedout")
-		}
-
-		if r.State.LoadState == FAILED {
-			log.Println("blocked")
-		}
-
-		r.ProxyAgent.SetProxy()
-		r.Page.Close()
-		r.HttpClient = nil
-		r.InitSession()
-	}
+	// 	r.ProxyAgent.SetProxy()
+	// 	r.Page.Close()
+	// 	r.HttpClient = nil
+	// 	r.InitSession()
+	// }
 
 	//Cleanup
+	r.Filter = &ins.Filter
+
+	r.Page.Navigate(ins.URL)
+	r.Page.MustWaitDOMStable()
 	r.CancelF = nil
 	r.StateCheck = nil
 	r.Filter = regexp.MustCompile(".*")
@@ -142,30 +154,22 @@ func (r *DefaultRequestContext) SetProxyRouter() {
 	router := r.Page.HijackRequests()
 	//	defer router.Stop()
 	router.MustAdd("*", func(ctx *rod.Hijack) {
-		ctx.Request.Type()
-		if r.HttpClient == nil {
-			if r.ProxyAgent != nil {
-				if p, ok := r.ProxyAgent.(*PSECProxyAgent); ok {
-					r.ReqClient.SetProxyURL(fmt.Sprintf("http://%v", p.CurrentProxy.Ip))
-				}
-			}
-			r.HttpClient = &http.Client{
-				Transport: r.ReqClient.Transport,
-			}
-		}
-
-		if r.State.LoadState != PROCESSING {
+		// if r.State.LoadState != PROCESSING {
+		// 	ctx.Response.Fail(proto.NetworkErrorReasonAborted)
+		// 	return
+		// }
+		if r.BlockFilter.MatchString(ctx.Request.URL().String()) {
 			ctx.Response.Fail(proto.NetworkErrorReasonAborted)
 			return
 		}
 
 		if r.Filter.MatchString(ctx.Request.URL().String()) {
 			log.Println("performing : ", ctx.Request.URL().String())
-			ctx.LoadResponse(r.HttpClient, true)
-		} else {
-			log.Println(r.Filter.String(), " === ", ctx.Request.URL())
-			log.Println("failed to match regex")
+			ctx.ContinueRequest(&proto.FetchContinueRequest{})
+			return
 		}
+
+		ctx.Response.Fail(proto.NetworkErrorReasonAborted)
 	})
 
 	go router.Run()
@@ -174,7 +178,7 @@ func (r *DefaultRequestContext) SetProxyRouter() {
 		r.State.RequestsMade = append(r.State.RequestsMade, e)
 
 		// log.Println("req made: ", len(r.State.RequestsMade))
-		// log.Println("url: ", e.Response.URL)
+		log.Println("url: ", e.Response.URL)
 		if doneF, ok := r.StateCheck.(DoneFunc); ok {
 			state := doneF(e.Response, r.State)
 			// log.Println("state: ", state)
@@ -193,9 +197,15 @@ func (r *DefaultRequestContext) SetProxyRouter() {
 			default:
 				log.Println("state not recognised, bad...")
 			}
-
 		}
 	})()
+	// go r.Page.EachEvent(func(e *proto.NetworkRequestWillBeSentExtraInfo) {
+	// 	log.Println("-------------------------------------------------------------------------")
+	// 	for i, h := range e.Headers {
+	// 		log.Printf("header key: %v, val: %v \n", i, h)
+	// 	}
+	// 	log.Println("-------------------------------------------------------------------------")
+	// })()
 }
 
 func (r *DefaultRequestContext) ChangeProxy() error {
@@ -203,6 +213,25 @@ func (r *DefaultRequestContext) ChangeProxy() error {
 	return r.ProxyAgent.SetProxy()
 }
 
-func (r *DefaultRequestContext) PerformSimpleRequest(req *http.Request) (*http.Response, error) {
-	return r.HttpClient.Do(req)
+// func (r *DefaultRequestContext) PerformSimpleRequest(req *http.Request) (*http.Response, error) {
+// 	if r.HttpClient == nil {
+// 		if r.ProxyAgent != nil {
+// 			if p, ok := r.ProxyAgent.(*PSECProxyAgent); ok {
+// 				r.ReqClient.SetProxyURL(fmt.Sprintf("http://%v", p.CurrentProxy.Ip))
+// 			}
+// 			if _, ok := r.ProxyAgent.(*BDProxyAgent); ok {
+// 				r.ReqClient.SetProxyURL("http://127.0.0.1:24000")
+// 			}
+// 		}
+// 		r.HttpClient = &http.Client{
+// 			Transport: r.ReqClient.Transport,
+// 		}
+// 	}
+
+// 	resp, err := r.ReqClient.R().Get(req.URL.String())
+
+//		return resp.Response, err
+//	}
+func (r *DefaultRequestContext) SetBlockFilter(filter *regexp.Regexp) {
+	r.BlockFilter = filter
 }

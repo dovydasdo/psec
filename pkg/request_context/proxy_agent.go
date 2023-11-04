@@ -14,7 +14,13 @@ import (
 type ProxyGetter interface {
 	LoadProxies() error
 	SetProxy() error
-	//TODO: implement some profiles per site for more reasonable proxy handling
+	GetAuth() (*ProxyAuth, error)
+}
+
+type ProxyAuth struct {
+	Server   string
+	Username string
+	Password string
 }
 
 type PSECProxyAgent struct {
@@ -30,6 +36,10 @@ func NewPSECProxyAgent() *PSECProxyAgent {
 	return &PSECProxyAgent{
 		Config: c,
 	}
+}
+
+func (a *PSECProxyAgent) GetAuth() (*ProxyAuth, error) {
+	return nil, fmt.Errorf("defautl agent has no auth")
 }
 
 func (a *PSECProxyAgent) LoadProxies() error {
