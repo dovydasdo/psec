@@ -10,44 +10,43 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
+// Only used for turso for now
+var dbUrl = "libsql://%s.turso.io?authToken=%s"
 
-type Saver interface {
-	Save(data interface{}) error
-	Migrate(data interface{}) error
-}
-
-type PSQLSaver struct {
+type SQLiteSaver struct {
 	db *gorm.DB
 }
 
-func NewPSQLSaver(cfg *config.Conf) *PSQLSaver {
+func NewSQLiteSaver() *SQLiteSaver {
+
+	cfg := config.NewTursoConf()
+
 	var logLevel gormlogger.LogLevel
-	if cfg.DB.Debug {
+	if cfg.Debug {
 		logLevel = gormlogger.Info
 	} else {
 		logLevel = gormlogger.Error
 	}
 
-	dbString := fmt.Sprintf(fmtDBString, cfg.DB.Host, cfg.DB.Username, cfg.DB.Password, cfg.DB.DBName, cfg.DB.Port)
+	dbString := fmt.Sprintf(dbUrl, cfg.DBName, cfg.DBToken)
 
 	db, err := gorm.Open(postgres.Open(dbString), &gorm.Config{Logger: gormlogger.Default.LogMode(logLevel)})
 	if err != nil {
-		// logger.Fatal().Err(err).Msg("DB connection start failure")
 		log.Panic("failed to open db")
 	}
-	return &PSQLSaver{
+
+	return &SQLiteSaver{
 		db: db,
 	}
 }
 
-func (s *PSQLSaver) Save(data interface{}) error {
+func (s *SQLiteSaver) Save(data interface{}) error {
 	//todo: handle migration and make this better. For the record i dont like this but it do be what it do be
 	s.db.Create(data)
 	return nil
 }
 
-func (s *PSQLSaver) Migrate(data interface{}) error {
+func (s *SQLiteSaver) Migrate(data interface{}) error {
 	err := s.db.AutoMigrate(data)
 	return err
 }

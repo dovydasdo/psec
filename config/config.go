@@ -19,6 +19,20 @@ type ConfDB struct {
 	Debug    bool   `env:"DB_DEBUG,required"`
 }
 
+type ProxyConf struct {
+	Address  string `env:"PROXY_API_ADDRESS, required"`
+	Port     int    `env:"PROXY_API_PORT, required"`
+	AuthName string `env:"PROXY_AUTH_NAME"`
+	AuthHost string `env:"PROXY_AUTH_HOST"`
+	AuthPass string `env:"PROXY_AUTH_PASS"`
+}
+
+type ConfTurso struct {
+	DBName  string `env:"TURSO_DB,required"`
+	DBToken string `env:"TURSO_TOKEN,required"`
+	Debug   bool   `env:"DB_DEBUG,required"`
+}
+
 func New() *Conf {
 	var c Conf
 	if err := envdecode.StrictDecode(&c); err != nil {
@@ -28,16 +42,17 @@ func New() *Conf {
 	return &c
 }
 
-type ProxyConf struct {
-	Address  string `env:"PROXY_API_ADDRESS, required"`
-	Port     int    `env:"PROXY_API_PORT, required"`
-	AuthName string `env:"PROXY_AUTH_NAME"`
-	AuthHost string `env:"PROXY_AUTH_HOST"`
-	AuthPass string `env:"PROXY_AUTH_PASS"`
-}
-
 func NewProxyConfig() *ProxyConf {
 	var c ProxyConf
+	if err := envdecode.StrictDecode(&c); err != nil {
+		log.Fatalf("Failed to decode: %s", err)
+	}
+
+	return &c
+}
+
+func NewTursoConf() *ConfTurso {
+	var c ConfTurso
 	if err := envdecode.StrictDecode(&c); err != nil {
 		log.Fatalf("Failed to decode: %s", err)
 	}
