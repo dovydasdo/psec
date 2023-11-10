@@ -3,7 +3,6 @@ package psec
 import (
 	"errors"
 	"log"
-	"regexp"
 
 	"github.com/dovydasdo/psec/config"
 	r "github.com/dovydasdo/psec/pkg/request_context"
@@ -15,17 +14,17 @@ import (
 const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
 
 type PSEC struct {
-	rctx   r.RequestContextInterface
+	rctx   r.Loader
 	sctx   sc.Saver
 	uctx   uc.UtilInterface
-	cFunc  func(c r.RequestContextInterface, s sc.Saver, u uc.UtilInterface) error
+	cFunc  func(c r.Loader, s sc.Saver, u uc.UtilInterface) error
 	cfg    *config.Conf
 	logger logger.Logger
 }
 
 func New() *PSEC {
 	ec := &PSEC{
-		rctx:   r.New(),
+		rctx:   r.GetCDPContext(),
 		uctx:   uc.New(),
 		logger: *logger.New(true),
 	}
@@ -68,7 +67,7 @@ func (c *PSEC) InitRequestContext() *PSEC {
 	return c
 }
 
-func (c *PSEC) AddStartFunc(startFunc func(c r.RequestContextInterface, s sc.Saver, u uc.UtilInterface) error) *PSEC {
+func (c *PSEC) AddStartFunc(startFunc func(c r.Loader, s sc.Saver, u uc.UtilInterface) error) *PSEC {
 	c.cFunc = startFunc
 	return c
 }
@@ -88,10 +87,6 @@ func (c *PSEC) RegisterProxyAgent(p r.ProxyGetter) *PSEC {
 	return c
 }
 
-func (c *PSEC) SetBlockFilter(filter *regexp.Regexp) {
-	c.rctx.SetBlockFilter(filter)
-}
-
 func (c *PSEC) SetDefaultProxyAgent() *PSEC {
 	c.rctx.RegisterProxyAgent(r.NewPSECProxyAgent())
 	return c
@@ -102,5 +97,9 @@ func (c *PSEC) Start() error {
 		return errors.New("no stat funcion has been porvided")
 	}
 
-	return c.cFunc(c.rctx, c.sctx, c.uctx)
+	err := c.cFunc(c.rctx, c.sctx, c.uctx)
+	if err != nil {
+	}
+
+	return err
 }

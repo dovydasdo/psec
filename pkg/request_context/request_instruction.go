@@ -20,6 +20,14 @@ type RequestInstruction struct {
 	Filter regexp.Regexp
 }
 
+type NavigateInstruction struct {
+	URL           string
+	DoneCondition interface{}
+	Filters       []string
+}
+
+type DoneElVisible string
+
 type ReqCtxKey struct {
 	Id string
 }
