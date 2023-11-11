@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
 	"time"
 
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	util "github.com/dovydasdo/psec/util/injections"
 )
 
 type CDPContext struct {
@@ -48,7 +52,6 @@ func (c *CDPContext) Initialize() {
 	chromedp.ListenTarget(c.ctx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *fetch.EventRequestPaused:
-			log.Printf("event request paused: status code =%v, status text= %v, url=%v", ev.ResponseStatusCode, ev.ResponseStatusText, ev.Request.URL)
 
 			// If there is a response code and status then its a response, let redirects through
 			if ev.ResponseStatusCode != 0 && ev.ResponseStatusText != "" {
@@ -98,8 +101,8 @@ func (c *CDPContext) Initialize() {
 
 				return
 			}
-
 			// Continue with request porcessing
+			log.Printf("event request paused: url=%v", ev.Request.URL)
 			req := NetworkRequest{}
 			req.Body = ev.Request.PostData
 			req.URL = ev.Request.URL
@@ -124,7 +127,82 @@ func (c *CDPContext) Initialize() {
 		}
 	})
 
-	chromedp.Run(c.ctx, fetch.Enable(), network.Enable(), chromedp.Navigate(""))
+	// Todo: make configurable
+	injection, err := GetInjection("/home/ddom/coding/psec/util/injections/stealth.min.js")
+	if err != nil {
+		log.Fatalf("failed to read injection, aborting. Err: %v", err.Error())
+	}
+
+	addInjection := page.AddScriptToEvaluateOnNewDocument(injection)
+	addInjection.RunImmediately = true
+
+	uaInfo := util.GetStaticUAInfo()
+	overrideUA := emulation.SetUserAgentOverride(uaInfo.UserAgent)
+	overrideUA.AcceptLanguage = uaInfo.AcceptLanguage
+	overrideUA.Platform = uaInfo.Platform
+	overrideUA.UserAgentMetadata = &emulation.UserAgentMetadata{
+		Architecture:    uaInfo.Metadata.Architecture,
+		Bitness:         uaInfo.Metadata.Bitness,
+		Mobile:          uaInfo.Metadata.Mobile,
+		Model:           uaInfo.Metadata.Model,
+		Platform:        uaInfo.Metadata.Platform,
+		PlatformVersion: uaInfo.Metadata.PlatformVersion,
+		Wow64:           uaInfo.Metadata.WOW64,
+		Brands: []*emulation.UserAgentBrandVersion{
+			{
+				Brand:   uaInfo.Metadata.Brands[0].Brand,
+				Version: uaInfo.Metadata.Brands[0].Version,
+			},
+			{
+				Brand:   uaInfo.Metadata.Brands[1].Brand,
+				Version: uaInfo.Metadata.Brands[1].Version,
+			},
+			{
+				Brand:   uaInfo.Metadata.Brands[2].Brand,
+				Version: uaInfo.Metadata.Brands[2].Version,
+			},
+		},
+		FullVersionList: []*emulation.UserAgentBrandVersion{
+			{
+				Brand:   uaInfo.Metadata.FullVersionList[0].Brand,
+				Version: uaInfo.Metadata.FullVersionList[0].Version,
+			},
+			{
+				Brand:   uaInfo.Metadata.FullVersionList[1].Brand,
+				Version: uaInfo.Metadata.FullVersionList[1].Version,
+			},
+			{
+				Brand:   uaInfo.Metadata.FullVersionList[2].Brand,
+				Version: uaInfo.Metadata.FullVersionList[2].Version,
+			},
+		},
+	}
+
+	overrideAutomation := emulation.SetAutomationOverride(false)
+
+	chromedp.Run(c.ctx,
+		fetch.Enable(),
+		network.Enable(),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// Fingerprint stuff
+			_, err := addInjection.Do(ctx)
+			if err != nil {
+				return err
+			}
+
+			err = overrideUA.Do(ctx)
+			if err != nil {
+				return err
+			}
+
+			err = overrideAutomation.Do(ctx)
+			if err != nil {
+				return err
+			}
+
+			return err
+		}),
+		chromedp.Navigate(""))
 }
 
 func (c *CDPContext) Reset() {
@@ -229,4 +307,13 @@ func GetHeadersResp(protoHeaders []*fetch.HeaderEntry) map[string]string {
 	}
 
 	return hto
+}
+
+func GetInjection(path string) (string, error) {
+	file, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	return string(file[:]), nil
 }

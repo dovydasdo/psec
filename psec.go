@@ -13,11 +13,13 @@ import (
 
 const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
 
+type ExtractionFunc func(c r.Loader, s sc.Saver, u uc.UtilInterface) error
+
 type PSEC struct {
 	rctx   r.Loader
 	sctx   sc.Saver
 	uctx   uc.UtilInterface
-	cFunc  func(c r.Loader, s sc.Saver, u uc.UtilInterface) error
+	cFunc  ExtractionFunc
 	cfg    *config.Conf
 	logger logger.Logger
 }
@@ -67,7 +69,7 @@ func (c *PSEC) InitRequestContext() *PSEC {
 	return c
 }
 
-func (c *PSEC) AddStartFunc(startFunc func(c r.Loader, s sc.Saver, u uc.UtilInterface) error) *PSEC {
+func (c *PSEC) AddStartFunc(startFunc ExtractionFunc) *PSEC {
 	c.cFunc = startFunc
 	return c
 }
@@ -98,8 +100,6 @@ func (c *PSEC) Start() error {
 	}
 
 	err := c.cFunc(c.rctx, c.sctx, c.uctx)
-	if err != nil {
-	}
 
 	return err
 }
