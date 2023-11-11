@@ -17,21 +17,19 @@ const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disab
 type ExtractionFunc func(c r.Loader, s sc.Saver, u uc.UtilInterface) error
 
 type PSEC struct {
-	rctx     r.Loader
-	sctx     sc.Saver
-	uctx     uc.UtilInterface
-	cFunc    ExtractionFunc
-	cfg      *config.Conf
-	logger   logger.Logger
-	rstLimit int
+	rctx   r.Loader
+	sctx   sc.Saver
+	uctx   uc.UtilInterface
+	cFunc  ExtractionFunc
+	cfg    *config.Conf
+	logger logger.Logger
 }
 
-func New(rstLimit int) *PSEC {
+func New() *PSEC {
 	ec := &PSEC{
-		rctx:     r.GetCDPContext(),
-		uctx:     uc.New(),
-		logger:   *logger.New(true),
-		rstLimit: rstLimit,
+		rctx:   r.GetCDPContext(),
+		uctx:   uc.New(),
+		logger: *logger.New(true),
 	}
 
 	return ec
@@ -97,13 +95,13 @@ func (c *PSEC) SetDefaultProxyAgent() *PSEC {
 	return c
 }
 
-func (c *PSEC) Start() error {
+func (c *PSEC) Start(limit int) error {
 	if c.cFunc == nil {
 		return errors.New("no stat funcion has been porvided")
 	}
 
 	// TODO: allow custom actions from errors
-	for i := 0; i < c.rstLimit; i++ {
+	for i := 0; i < limit; i++ {
 		err := c.cFunc(c.rctx, c.sctx, c.uctx)
 
 		switch v := err.(type) {
@@ -112,7 +110,7 @@ func (c *PSEC) Start() error {
 			log.Println("Got nil error, collection complete, terminating")
 			return nil
 		case perrors.Blocked:
-			log.Println("Got blocked error, resetting and retrying")
+			log.Printf("Got blocked error, resetting and retrying, err: %v", err.Error())
 			err = c.rctx.ChangeProxy()
 			if err != nil {
 				// If no proxies, terminate immediately
@@ -130,7 +128,7 @@ func (c *PSEC) Start() error {
 		}
 	}
 
-	log.Printf("failed to successfully complete in %v tryes, terminating", c.rstLimit)
+	log.Printf("failed to successfully complete in %v attempts, terminating", limit)
 
 	return nil
 }
