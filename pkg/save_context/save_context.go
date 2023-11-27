@@ -3,6 +3,7 @@ package savecontext
 import (
 	"fmt"
 	"log"
+	"reflect"
 
 	"github.com/dovydasdo/psec/config"
 	"gorm.io/driver/postgres"
@@ -12,9 +13,13 @@ import (
 
 const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
 
+type SaveFunc func(saver Saver, data interface{}) error
+
 type Saver interface {
 	Save(data interface{}) error
 	Migrate(data interface{}) error
+	Exists(id uint, dType interface{}) (interface{}, error)
+	CustomSave(saveF SaveFunc, data interface{}) error
 }
 
 type PSQLSaver struct {
@@ -47,7 +52,42 @@ func (s *PSQLSaver) Save(data interface{}) error {
 	return nil
 }
 
+func (s *PSQLSaver) CustomSave(saveF SaveFunc, data interface{}) error {
+	return saveF(s, data)
+}
+
+func (s *PSQLSaver) Exists(id uint, dType interface{}) (interface{}, error) {
+	// Cringe
+	dataType := reflect.TypeOf(dType).Elem() // Get the type of the element (assuming data is a pointer)
+
+	// Create a new instance of the type
+	newData := reflect.New(dataType).Interface()
+	r := s.db.Model(dType).Where("id = ?", id).Limit(1).Find(&newData)
+	if r.Error != nil {
+		return false, &QueryFailedError{
+			Message: r.Error.Error(),
+			BaseErr: r.Error,
+		}
+	}
+
+	if r.RowsAffected == 0 {
+		return nil, fmt.Errorf("not found")
+	}
+
+	return newData, nil
+}
+
 func (s *PSQLSaver) Migrate(data interface{}) error {
-	err := s.db.AutoMigrate(data)
+	t := reflect.TypeOf(data)
+	err := s.db.Model(&t).AutoMigrate(data)
 	return err
+}
+
+type QueryFailedError struct {
+	Message string
+	BaseErr error
+}
+
+func (e QueryFailedError) Error() string {
+	return e.Message
 }

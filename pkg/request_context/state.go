@@ -1,7 +1,9 @@
 package requestcontext
 
+import "sync"
+
 type State struct {
-	NetworkEvents map[string]*NetworkEvent
+	NetworkEvents sync.Map
 	Source        string
 }
 

@@ -28,6 +28,8 @@ type NavigateInstruction struct {
 
 type DoneElVisible string
 
+type DoneResponseReceived string
+
 type ReqCtxKey struct {
 	Id string
 }

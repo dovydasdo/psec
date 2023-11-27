@@ -61,7 +61,7 @@ func (c *PSEC) SetSQLiteSaver() *PSEC {
 		return c
 	}
 
-	c.sctx = sc.NewSQLiteSaver()
+	// c.sctx = sc.NewSQLiteSaver()
 	return c
 }
 

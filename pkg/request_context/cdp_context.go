@@ -3,15 +3,18 @@ package requestcontext
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"time"
 
+	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/dovydasdo/psec/config"
 	util "github.com/dovydasdo/psec/util/injections"
 )
 
@@ -29,9 +32,8 @@ type CDPContext struct {
 }
 
 func GetCDPContext() *CDPContext {
-	// conf := config.NewBrowserlessConf()
-
-	opts := append(chromedp.DefaultExecAllocatorOptions[:]) // chromedp.ProxyServer(fmt.Sprintf("%s:%v", conf.Proxy.Address, conf.Proxy.Port)),
+	conf := config.NewProxyConfig()
+	opts := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ProxyServer(fmt.Sprintf("%s:%v", conf.Address, conf.Port)))
 
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 
@@ -41,9 +43,7 @@ func GetCDPContext() *CDPContext {
 		cancel:          cf,
 		allocator:       allocatorContext,
 		allocatorCancel: cancel,
-		State: &State{
-			NetworkEvents: make(map[string]*NetworkEvent, 0),
-		},
+		State:           &State{},
 	}
 }
 
@@ -54,7 +54,8 @@ func (c *CDPContext) Initialize() {
 		case *fetch.EventRequestPaused:
 
 			// If there is a response code and status then its a response, let redirects through
-			if ev.ResponseStatusCode != 0 && ev.ResponseStatusText != "" {
+			// TODO: look for a better way to distinguish between requests and responses
+			if ev.ResponseStatusCode != 0 {
 				// Continue the response
 				go func() {
 					err := chromedp.Run(c.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
@@ -67,7 +68,7 @@ func (c *CDPContext) Initialize() {
 					}
 				}()
 				// Process Response
-				if event, ok := c.State.NetworkEvents[string(ev.RequestID)]; ok && ev.ResponseStatusCode != 301 && ev.ResponseStatusCode != 302 {
+				if event, ok := c.State.NetworkEvents.Load(ev.RequestID); ok && ev.ResponseStatusCode != 301 && ev.ResponseStatusCode != 302 {
 					resp := NetworkResponse{}
 
 					go func() {
@@ -83,34 +84,35 @@ func (c *CDPContext) Initialize() {
 							resp.Headers = GetHeadersResp(ev.ResponseHeaders)
 
 							if err != nil {
-								log.Printf("failed to get body for request: %v, err= %v", ev.Request.URL, err.Error())
+								// log.Printf("failed to get body for request: %v, err= %v", ev.Request.URL, err.Error())
 								time.Sleep(time.Second)
 								continue
 							}
-							event.Response = resp
+
+							if e, ok := event.(*NetworkEvent); ok {
+								e.Response = resp
+							}
 
 							return
 						}
 
-						log.Printf("after three tries, failed to get body for request: %v", ev.Request.URL)
+						// log.Printf("after three tries, failed to get body for request: %v", ev.Request.URL)
 					}()
 
 				} else {
-					log.Printf("got a response when there was no request in the state: %v", ev.Request.URL)
+					// log.Printf("got a response when there was no request in the state: %v", ev.Request.URL)
 				}
 
 				return
 			}
+			// log.Printf("event request paused: url=%v, status: %v, status text: %v", ev.Request.URL, ev.ResponseStatusCode, ev.ResponseStatusText)
 			// Continue with request porcessing
-			log.Printf("event request paused: url=%v", ev.Request.URL)
 			req := NetworkRequest{}
 			req.Body = ev.Request.PostData
 			req.URL = ev.Request.URL
 			req.Headers = GetHeaders(ev.Request.Headers)
 
-			c.State.NetworkEvents[string(ev.RequestID)] = &NetworkEvent{
-				Request: req,
-			}
+			c.State.NetworkEvents.Store(ev.RequestID, &NetworkEvent{Request: req})
 
 			// Let request pass
 			go func() {
@@ -210,9 +212,7 @@ func (c *CDPContext) Reset() {
 
 	cdpCtx, cf := chromedp.NewContext(c.allocator)
 
-	c.State = &State{
-		NetworkEvents: make(map[string]*NetworkEvent, 0),
-	}
+	c.State = &State{}
 	c.ctx = cdpCtx
 	c.cancel = cf
 	c.Initialize()
@@ -223,7 +223,7 @@ func (c *CDPContext) Do(ins ...interface{}) (string, error) {
 		switch v := instruction.(type) {
 		case NavigateInstruction:
 			url := v.URL
-			done, err := GetDoneAction(v.DoneCondition)
+			done, err := c.GetDoneAction(v.DoneCondition)
 			if err != nil {
 				continue
 			}
@@ -262,7 +262,21 @@ func (c *CDPContext) Cancel() {
 }
 
 func (c *CDPContext) GetState() *State {
+	html := ""
+	chromedp.Run(c.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		node, err := dom.GetDocument().Do(ctx)
+		if err != nil {
+			return err
+		}
+		html, err = dom.GetOuterHTML().WithNodeID(node.NodeID).Do(ctx)
+		return err
+	}))
+	c.State.Source = html
 	return c.State
+}
+
+func (c *CDPContext) ClearState() {
+	c.State = &State{}
 }
 
 func (c *CDPContext) SetBinPath(path string) {
@@ -277,10 +291,35 @@ func (c *CDPContext) ChangeProxy() error {
 	return c.ProxyAgent.SetProxy()
 }
 
-func GetDoneAction(condition interface{}) (chromedp.Action, error) {
-	switch c := condition.(type) {
+func (c CDPContext) GetDoneAction(condition interface{}) (chromedp.Action, error) {
+	switch cond := condition.(type) {
 	case DoneElVisible:
-		return chromedp.WaitVisible(c), nil
+		return chromedp.WaitVisible(cond), nil
+	case DoneResponseReceived:
+		return chromedp.ActionFunc(func(ctx context.Context) error {
+			//TODO: implement without polling
+			toBreak := false
+			for i := 0; i < 20; i++ {
+				c.State.NetworkEvents.Range(func(key, value any) bool {
+					if v, ok := value.(*NetworkEvent); ok {
+						if v.Response.URL == string(cond) {
+							toBreak = true
+							return true
+						}
+					}
+
+					return true
+				})
+
+				if toBreak {
+					break
+				}
+
+				time.Sleep(time.Millisecond * 500)
+			}
+
+			return nil
+		}), nil
 	default:
 		return nil, errors.New("the provided contition was not recognised")
 	}
