@@ -1,16 +1,28 @@
 package utilcontext
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	requestcontext "github.com/dovydasdo/psec/pkg/request_context"
+	"golang.org/x/exp/slices"
 )
 
 type UtilInterface interface {
 	ParseTime(timeStr string) (time.Time, error)
+	GetBlockList(letThrough []string, state *requestcontext.State) ([]string, error)
+	GetHostBlockList(letThrough []string, state *requestcontext.State) ([]string, error)
+	SaveBlockList(list map[string][]string, path string) error
+	LoadBlockList(path string) (map[string][]string, error)
 }
 
 type UtilContext struct {
@@ -98,4 +110,87 @@ func getMountIndex(mounth string) (string, error) {
 	default:
 		return "-1", errors.New("mount not found")
 	}
+}
+
+func (u *UtilContext) GetBlockList(letThrough []string, state *requestcontext.State) ([]string, error) {
+	filters := make([]string, 0)
+
+	state.NetworkEvents.Range(func(key, value interface{}) bool {
+		block := true
+		if ev, ok := value.(*requestcontext.NetworkEvent); ok {
+			for _, pass := range letThrough {
+				if strings.Contains(ev.Request.URL, pass) {
+					block = false
+					break
+				}
+			}
+
+			if block && !slices.Contains(filters, ev.Request.URL) {
+				filters = append(filters, ev.Request.URL)
+			}
+		}
+		return true
+	})
+
+	return filters, nil
+}
+
+func (u *UtilContext) GetHostBlockList(letThrough []string, state *requestcontext.State) ([]string, error) {
+	filters := make([]string, 0)
+	state.NetworkEvents.Range(func(key, value interface{}) bool {
+		block := true
+		if ev, ok := value.(*requestcontext.NetworkEvent); ok {
+			eUrl, err := url.Parse(ev.Request.URL)
+			if err != nil {
+				log.Printf("failed to parse url: %v", ev.Request.URL)
+			}
+
+			for _, pass := range letThrough {
+				if strings.Contains(eUrl.Host, pass) {
+					block = false
+					break
+				}
+			}
+
+			if block && !slices.Contains(filters, "*"+eUrl.Host+"*") {
+				filters = append(filters, "*"+eUrl.Host+"*")
+			}
+
+		}
+		return true
+	})
+
+	return filters, nil
+}
+
+func (u *UtilContext) SaveBlockList(list map[string][]string, path string) error {
+
+	json, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
+
+	err = os.WriteFile(path, json, 0644)
+
+	return err
+}
+
+func (u *UtilContext) LoadBlockList(path string) (map[string][]string, error) {
+	jsonFile, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer jsonFile.Close()
+
+	byteValue, err := io.ReadAll(jsonFile)
+	if err != nil {
+		log.Printf("Error reading: %v", err)
+	}
+	var list map[string][]string
+	err = json.Unmarshal(byteValue, &list)
+	if err != nil {
+		return nil, err
+	}
+
+	return list, nil
 }

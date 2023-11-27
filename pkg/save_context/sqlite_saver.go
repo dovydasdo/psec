@@ -1,6 +1,7 @@
 package savecontext
 
 import (
+	"errors"
 	"fmt"
 	"log"
 
@@ -44,6 +45,10 @@ func (s *SQLiteSaver) Save(data interface{}) error {
 	//todo: handle migration and make this better. For the record i dont like this but it do be what it do be
 	s.db.Create(data)
 	return nil
+}
+
+func (s *SQLiteSaver) Exists(id uint, dType interface{}) (interface{}, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (s *SQLiteSaver) Migrate(data interface{}) error {

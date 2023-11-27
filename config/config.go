@@ -33,6 +33,11 @@ type ConfTurso struct {
 	Debug   bool   `env:"DB_DEBUG,required"`
 }
 
+type ConfBrowserless struct {
+	Token string `env:"BROWSERLESS_TOKEN,required"`
+	Proxy ProxyConf
+}
+
 func New() *Conf {
 	var c Conf
 	if err := envdecode.StrictDecode(&c); err != nil {
@@ -53,6 +58,15 @@ func NewProxyConfig() *ProxyConf {
 
 func NewTursoConf() *ConfTurso {
 	var c ConfTurso
+	if err := envdecode.StrictDecode(&c); err != nil {
+		log.Fatalf("Failed to decode: %s", err)
+	}
+
+	return &c
+}
+
+func NewBrowserlessConf() *ConfBrowserless {
+	var c ConfBrowserless
 	if err := envdecode.StrictDecode(&c); err != nil {
 		log.Fatalf("Failed to decode: %s", err)
 	}

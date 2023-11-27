@@ -3,29 +3,31 @@ package psec
 import (
 	"errors"
 	"log"
-	"regexp"
 
 	"github.com/dovydasdo/psec/config"
 	r "github.com/dovydasdo/psec/pkg/request_context"
 	sc "github.com/dovydasdo/psec/pkg/save_context"
 	uc "github.com/dovydasdo/psec/pkg/util_context"
+	perrors "github.com/dovydasdo/psec/util/errors"
 	"github.com/dovydasdo/psec/util/logger"
 )
 
 const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
 
+type ExtractionFunc func(c r.Loader, s sc.Saver, u uc.UtilInterface) error
+
 type PSEC struct {
-	rctx   r.RequestContextInterface
+	rctx   r.Loader
 	sctx   sc.Saver
 	uctx   uc.UtilInterface
-	cFunc  func(c r.RequestContextInterface, s sc.Saver, u uc.UtilInterface) error
+	cFunc  ExtractionFunc
 	cfg    *config.Conf
 	logger logger.Logger
 }
 
 func New() *PSEC {
 	ec := &PSEC{
-		rctx:   r.New(),
+		rctx:   r.GetCDPContext(),
 		uctx:   uc.New(),
 		logger: *logger.New(true),
 	}
@@ -59,7 +61,7 @@ func (c *PSEC) SetSQLiteSaver() *PSEC {
 		return c
 	}
 
-	c.sctx = sc.NewSQLiteSaver()
+	// c.sctx = sc.NewSQLiteSaver()
 	return c
 }
 
@@ -68,7 +70,7 @@ func (c *PSEC) InitRequestContext() *PSEC {
 	return c
 }
 
-func (c *PSEC) AddStartFunc(startFunc func(c r.RequestContextInterface, s sc.Saver, u uc.UtilInterface) error) *PSEC {
+func (c *PSEC) AddStartFunc(startFunc ExtractionFunc) *PSEC {
 	c.cFunc = startFunc
 	return c
 }
@@ -88,19 +90,45 @@ func (c *PSEC) RegisterProxyAgent(p r.ProxyGetter) *PSEC {
 	return c
 }
 
-func (c *PSEC) SetBlockFilter(filter *regexp.Regexp) {
-	c.rctx.SetBlockFilter(filter)
-}
-
 func (c *PSEC) SetDefaultProxyAgent() *PSEC {
 	c.rctx.RegisterProxyAgent(r.NewPSECProxyAgent())
 	return c
 }
 
-func (c *PSEC) Start() error {
+func (c *PSEC) Start(limit int) error {
 	if c.cFunc == nil {
 		return errors.New("no stat funcion has been porvided")
 	}
 
-	return c.cFunc(c.rctx, c.sctx, c.uctx)
+	// TODO: allow custom actions from errors
+	for i := 0; i < limit; i++ {
+		err := c.cFunc(c.rctx, c.sctx, c.uctx)
+
+		switch v := err.(type) {
+		case nil:
+			// Succesfull run should eventually return nil as error
+			log.Println("Got nil error, collection complete, terminating")
+			return nil
+		case perrors.Blocked:
+			log.Printf("Got blocked error, resetting and retrying, err: %v", err.Error())
+			err = c.rctx.ChangeProxy()
+			if err != nil {
+				// If no proxies, terminate immediately
+				return nil
+			}
+
+			c.rctx.Reset()
+			continue
+		case perrors.ExtractionFailed:
+			log.Println("Got extraction error, retrying")
+			c.rctx.Reset()
+			continue
+		default:
+			return v
+		}
+	}
+
+	log.Printf("failed to successfully complete in %v attempts, terminating", limit)
+
+	return nil
 }
