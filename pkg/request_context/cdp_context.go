@@ -32,8 +32,9 @@ type CDPContext struct {
 }
 
 func GetCDPContext() *CDPContext {
-	conf := config.NewProxyConfig()
-	opts := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ProxyServer(fmt.Sprintf("%s:%v", conf.Address, conf.Port)))
+	conf := config.NewCDPLaunchConf()
+
+	opts := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ProxyServer(fmt.Sprintf("%s:%v", conf.Proxy.Address, conf.Proxy.Port)), chromedp.ExecPath(conf.BinPath))
 
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 
