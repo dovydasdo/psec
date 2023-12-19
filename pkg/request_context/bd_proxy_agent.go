@@ -8,14 +8,14 @@ import (
 )
 
 type BDProxyAgent struct {
-	Config       *config.ProxyConf
+	Config       *config.ConfBDProxy
 	CurrentProxy Proxy
 	SessionID    int
 	Auth         *ProxyAuth
 }
 
 func NewBDProxyAgent() *BDProxyAgent {
-	c := config.NewProxyConfig()
+	c := config.NewBDProxyConf()
 
 	log.Printf("server: %v, un: %v, pwd: %v", c.AuthHost, c.AuthName, c.AuthPass)
 

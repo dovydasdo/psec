@@ -48,7 +48,7 @@ func NewPSQLSaver(cfg *config.Conf) *PSQLSaver {
 
 func (s *PSQLSaver) Save(data interface{}) error {
 	//todo: handle migration and make this better. For the record i dont like this but it do be what it do be
-	s.db.Create(data)
+	// s.db.Create(data)
 	return nil
 }
 

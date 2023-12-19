@@ -43,6 +43,12 @@ type ConfCDPLaunch struct {
 	BinPath string `env:"CDP_BIN_PATH,required"`
 }
 
+type ConfBDProxy struct {
+	AuthName string `env:"PROXY_AUTH_NAME"`
+	AuthHost string `env:"PROXY_AUTH_HOST"`
+	AuthPass string `env:"PROXY_AUTH_PASS"`
+}
+
 func New() *Conf {
 	var c Conf
 	if err := envdecode.StrictDecode(&c); err != nil {
@@ -81,6 +87,15 @@ func NewBrowserlessConf() *ConfBrowserless {
 
 func NewCDPLaunchConf() *ConfCDPLaunch {
 	var c ConfCDPLaunch
+	if err := envdecode.StrictDecode(&c); err != nil {
+		log.Fatalf("Failed to decode: %s", err)
+	}
+
+	return &c
+}
+
+func NewBDProxyConf() *ConfBDProxy {
+	var c ConfBDProxy
 	if err := envdecode.StrictDecode(&c); err != nil {
 		log.Fatalf("Failed to decode: %s", err)
 	}

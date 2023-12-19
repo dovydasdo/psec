@@ -3,11 +3,11 @@ package requestcontext
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/fetch"
@@ -32,26 +32,53 @@ type CDPContext struct {
 }
 
 func GetCDPContext() *CDPContext {
-	conf := config.NewCDPLaunchConf()
-
-	opts := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ProxyServer(fmt.Sprintf("%s:%v", conf.Proxy.Address, conf.Proxy.Port)), chromedp.ExecPath(conf.BinPath))
-
-	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
-
-	cdpCtx, cf := chromedp.NewContext(allocatorContext)
 	return &CDPContext{
-		ctx:             cdpCtx,
-		cancel:          cf,
-		allocator:       allocatorContext,
-		allocatorCancel: cancel,
-		State:           &State{},
+		State: &State{},
 	}
 }
 
 func (c *CDPContext) Initialize() {
+	// if proxy agent has been registered set the proxy
+	conf := config.NewCDPLaunchConf()
+	opts := chromedp.DefaultExecAllocatorOptions[:]
+
+	if bdAgent, ok := c.ProxyAgent.(*BDProxyAgent); ok {
+		proxyConf := bdAgent.Config
+		opts = append(opts, chromedp.ProxyServer("https://"+proxyConf.AuthHost))
+	}
+
+	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
+
+	cdpCtx, cf := chromedp.NewContext(allocatorContext)
+
+	c.binPath = conf.BinPath
+	c.cancel = cf
+	c.ctx = cdpCtx
+	c.allocator = allocatorContext
+	c.allocatorCancel = cancel
+
 	// Capture network traffic and save to internal state
 	chromedp.ListenTarget(c.ctx, func(ev interface{}) {
 		switch ev := ev.(type) {
+		case *fetch.EventAuthRequired:
+			cc := chromedp.FromContext(c.ctx)
+			execCtx := cdp.WithExecutor(c.ctx, cc.Target)
+			auth, err := c.ProxyAgent.GetAuth()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			resp := &fetch.AuthChallengeResponse{
+				Response: fetch.AuthChallengeResponseResponseProvideCredentials,
+				Username: auth.Username,
+				Password: auth.Password,
+			}
+
+			err = fetch.ContinueWithAuth(ev.RequestID, resp).Do(execCtx)
+			if err != nil {
+				log.Print(err)
+			}
+
 		case *fetch.EventRequestPaused:
 
 			// If there is a response code and status then its a response, let redirects through
