@@ -39,8 +39,9 @@ type ConfBrowserless struct {
 }
 
 type ConfCDPLaunch struct {
-	Proxy   ProxyConf
-	BinPath string `env:"CDP_BIN_PATH,required"`
+	Proxy         ProxyConf
+	BinPath       string `env:"CDP_BIN_PATH,required"`
+	InjectionPath string `env:"INJECTION_PATH,required"`
 }
 
 type ConfBDProxy struct {
