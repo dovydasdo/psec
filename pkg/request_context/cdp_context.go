@@ -32,26 +32,52 @@ type CDPContext struct {
 }
 
 func GetCDPContext() *CDPContext {
-	conf := config.NewCDPLaunchConf()
-
-	opts := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ProxyServer(fmt.Sprintf("%s:%v", conf.Proxy.Address, conf.Proxy.Port)), chromedp.ExecPath(conf.BinPath))
-
-	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
-
-	cdpCtx, cf := chromedp.NewContext(allocatorContext)
 	return &CDPContext{
-		ctx:             cdpCtx,
-		cancel:          cf,
-		allocator:       allocatorContext,
-		allocatorCancel: cancel,
-		State:           &State{},
+		State: &State{},
 	}
 }
 
 func (c *CDPContext) Initialize() {
+	// if proxy agent has been registered set the proxy
+	conf := config.NewCDPLaunchConf()
+	opts := chromedp.DefaultExecAllocatorOptions[:]
+
+	if bdAgent, ok := c.ProxyAgent.(*BDProxyAgent); ok {
+		proxyConf := bdAgent.Config
+		opts = append(opts, chromedp.ProxyServer(fmt.Sprintf("http://%v", proxyConf.AuthHost)))
+	}
+
+	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
+
+	cdpCtx, cf := chromedp.NewContext(allocatorContext)
+
+	c.binPath = conf.BinPath
+	c.cancel = cf
+	c.ctx = cdpCtx
+	c.allocator = allocatorContext
+	c.allocatorCancel = cancel
+
 	// Capture network traffic and save to internal state
 	chromedp.ListenTarget(c.ctx, func(ev interface{}) {
 		switch ev := ev.(type) {
+		case *fetch.EventAuthRequired:
+			if ev.AuthChallenge.Source == fetch.AuthChallengeSourceProxy {
+				go func() {
+					auth, err := c.ProxyAgent.GetAuth()
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					_ = chromedp.Run(c.ctx,
+						fetch.ContinueWithAuth(ev.RequestID, &fetch.AuthChallengeResponse{
+							Response: fetch.AuthChallengeResponseResponseProvideCredentials,
+							Username: auth.Username,
+							Password: auth.Password,
+						}),
+					)
+				}()
+			}
+
 		case *fetch.EventRequestPaused:
 
 			// If there is a response code and status then its a response, let redirects through
@@ -184,7 +210,7 @@ func (c *CDPContext) Initialize() {
 	overrideAutomation := emulation.SetAutomationOverride(false)
 
 	chromedp.Run(c.ctx,
-		fetch.Enable(),
+		fetch.Enable().WithHandleAuthRequests(true),
 		network.Enable(),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			// Fingerprint stuff
