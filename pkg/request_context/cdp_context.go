@@ -159,7 +159,7 @@ func (c *CDPContext) Initialize() {
 	})
 
 	// Todo: make configurable
-	injection, err := GetInjection("/home/ddom/coding/psec/util/injections/stealth.min.js")
+	injection, err := GetInjection(conf.InjectionPath)
 	if err != nil {
 		log.Fatalf("failed to read injection, aborting. Err: %v", err.Error())
 	}
