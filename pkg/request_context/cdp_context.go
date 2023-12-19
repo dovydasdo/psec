@@ -3,11 +3,11 @@ package requestcontext
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"time"
 
-	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/fetch"
@@ -44,7 +44,7 @@ func (c *CDPContext) Initialize() {
 
 	if bdAgent, ok := c.ProxyAgent.(*BDProxyAgent); ok {
 		proxyConf := bdAgent.Config
-		opts = append(opts, chromedp.ProxyServer("https://"+proxyConf.AuthHost))
+		opts = append(opts, chromedp.ProxyServer(fmt.Sprintf("http://%v", proxyConf.AuthHost)))
 	}
 
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -61,22 +61,21 @@ func (c *CDPContext) Initialize() {
 	chromedp.ListenTarget(c.ctx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *fetch.EventAuthRequired:
-			cc := chromedp.FromContext(c.ctx)
-			execCtx := cdp.WithExecutor(c.ctx, cc.Target)
-			auth, err := c.ProxyAgent.GetAuth()
-			if err != nil {
-				log.Fatal(err)
-			}
+			if ev.AuthChallenge.Source == fetch.AuthChallengeSourceProxy {
+				go func() {
+					auth, err := c.ProxyAgent.GetAuth()
+					if err != nil {
+						log.Fatal(err)
+					}
 
-			resp := &fetch.AuthChallengeResponse{
-				Response: fetch.AuthChallengeResponseResponseProvideCredentials,
-				Username: auth.Username,
-				Password: auth.Password,
-			}
-
-			err = fetch.ContinueWithAuth(ev.RequestID, resp).Do(execCtx)
-			if err != nil {
-				log.Print(err)
+					_ = chromedp.Run(c.ctx,
+						fetch.ContinueWithAuth(ev.RequestID, &fetch.AuthChallengeResponse{
+							Response: fetch.AuthChallengeResponseResponseProvideCredentials,
+							Username: auth.Username,
+							Password: auth.Password,
+						}),
+					)
+				}()
 			}
 
 		case *fetch.EventRequestPaused:
@@ -211,7 +210,7 @@ func (c *CDPContext) Initialize() {
 	overrideAutomation := emulation.SetAutomationOverride(false)
 
 	chromedp.Run(c.ctx,
-		fetch.Enable(),
+		fetch.Enable().WithHandleAuthRequests(true),
 		network.Enable(),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			// Fingerprint stuff
