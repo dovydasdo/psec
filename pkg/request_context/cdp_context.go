@@ -47,6 +47,8 @@ func (c *CDPContext) Initialize() {
 		opts = append(opts, chromedp.ProxyServer(fmt.Sprintf("http://%v", proxyConf.AuthHost)))
 	}
 
+	opts = append(opts, chromedp.ExecPath(conf.BinPath))
+
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 
 	cdpCtx, cf := chromedp.NewContext(allocatorContext)
