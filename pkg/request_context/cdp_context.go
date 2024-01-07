@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -26,14 +27,16 @@ type CDPContext struct {
 	allocatorCancel context.CancelFunc
 
 	binPath string
+	logger  *slog.Logger
 
 	State      *State
 	ProxyAgent ProxyGetter
 }
 
-func GetCDPContext() *CDPContext {
+func GetCDPContext(l *slog.Logger) *CDPContext {
 	return &CDPContext{
-		State: &State{},
+		State:  &State{},
+		logger: l,
 	}
 }
 
@@ -113,7 +116,7 @@ func (c *CDPContext) Initialize() {
 							resp.Headers = GetHeadersResp(ev.ResponseHeaders)
 
 							if err != nil {
-								// log.Printf("failed to get body for request: %v, err= %v", ev.Request.URL, err.Error())
+								c.logger.Error("cdp", "message", "failed to get body for request", "error", err.Error())
 								time.Sleep(time.Second)
 								continue
 							}
@@ -122,19 +125,21 @@ func (c *CDPContext) Initialize() {
 								e.Response = resp
 							}
 
+							c.logger.Log(context.Background(), -1, "RESPONSE", "url", ev.Request.URL, "status", ev.ResponseStatusCode, "id", ev.RequestID)
+
 							return
 						}
 
-						// log.Printf("after three tries, failed to get body for request: %v", ev.Request.URL)
+						c.logger.Warn("cdp", "message", "after three tries, failed to get body for request", "url", ev.Request.URL)
 					}()
 
 				} else {
-					// log.Printf("got a response when there was no request in the state: %v", ev.Request.URL)
+					c.logger.Warn("cdp", "message", "got a response when there was no request in the statev", "url", ev.Request.URL)
 				}
 
 				return
 			}
-			// log.Printf("event request paused: url=%v, status: %v, status text: %v", ev.Request.URL, ev.ResponseStatusCode, ev.ResponseStatusText)
+			c.logger.Log(context.Background(), -1, "REQUEST", "url", ev.Request.URL, "id", ev.RequestID)
 			// Continue with request porcessing
 			req := NetworkRequest{}
 			req.Body = ev.Request.PostData
