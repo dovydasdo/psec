@@ -3,13 +3,13 @@ package psec
 import (
 	"errors"
 	"log"
+	"log/slog"
 
 	"github.com/dovydasdo/psec/config"
 	r "github.com/dovydasdo/psec/pkg/request_context"
 	sc "github.com/dovydasdo/psec/pkg/save_context"
 	uc "github.com/dovydasdo/psec/pkg/util_context"
 	perrors "github.com/dovydasdo/psec/util/errors"
-	"github.com/dovydasdo/psec/util/logger"
 )
 
 const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
@@ -22,14 +22,14 @@ type PSEC struct {
 	uctx   uc.UtilInterface
 	cFunc  ExtractionFunc
 	cfg    *config.Conf
-	logger logger.Logger
+	logger *slog.Logger
 }
 
-func New() *PSEC {
+func New(l *slog.Logger) *PSEC {
 	ec := &PSEC{
-		rctx:   r.GetCDPContext(),
+		rctx:   r.GetCDPContext(l),
 		uctx:   uc.New(),
-		logger: *logger.New(true),
+		logger: l,
 	}
 
 	return ec
@@ -37,27 +37,27 @@ func New() *PSEC {
 
 func (c *PSEC) SetPSQLSaver() *PSEC {
 	if c.sctx != nil {
-		c.logger.Warn().Str("db", "psql saver called when saver is already initiated")
+		c.logger.Warn("db", "message", "psql saver called when saver is already initiated")
 		return c
 	}
 
 	if c.cfg == nil {
-		log.Fatal("config needs to be initialzed before setting a saver")
+		c.logger.Error("db", "message", "config needs to be initialzed before setting a saver")
 		return c
 	}
 
-	c.sctx = sc.NewPSQLSaver(c.cfg)
+	c.sctx = sc.NewPSQLSaver(c.cfg, c.logger)
 	return c
 }
 
 func (c *PSEC) SetSQLiteSaver() *PSEC {
 	if c.sctx != nil {
-		c.logger.Warn().Str("db", "sqlite saver called when saver is already initiated")
+		c.logger.Warn("db", "message", "sqlite saver called when saver is already initiated")
 		return c
 	}
 
 	if c.cfg == nil {
-		log.Fatal("config needs to be initialzed before setting a saver")
+		c.logger.Error("db", "message", "config needs to be initialzed before setting a saver")
 		return c
 	}
 

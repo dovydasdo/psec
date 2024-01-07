@@ -3,6 +3,7 @@ package savecontext
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"reflect"
 
 	"github.com/dovydasdo/psec/config"
@@ -23,10 +24,11 @@ type Saver interface {
 }
 
 type PSQLSaver struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger *slog.Logger
 }
 
-func NewPSQLSaver(cfg *config.Conf) *PSQLSaver {
+func NewPSQLSaver(cfg *config.Conf, l *slog.Logger) *PSQLSaver {
 	var logLevel gormlogger.LogLevel
 	if cfg.DB.Debug {
 		logLevel = gormlogger.Info
@@ -42,7 +44,8 @@ func NewPSQLSaver(cfg *config.Conf) *PSQLSaver {
 		log.Panic("failed to open db")
 	}
 	return &PSQLSaver{
-		db: db,
+		db:     db,
+		logger: l,
 	}
 }
 
