@@ -18,7 +18,7 @@ import (
 )
 
 type UtilInterface interface {
-	ParseTime(timeStr string) (time.Time, error)
+	ParseTime(timeStr string, isLast bool) (time.Time, error)
 	GetBlockList(letThrough []string, state *requestcontext.State) ([]string, error)
 	GetHostBlockList(letThrough []string, state *requestcontext.State) ([]string, error)
 	SaveBlockList(list map[string][]string, path string) error
@@ -32,7 +32,7 @@ func New() *UtilContext {
 	return &UtilContext{}
 }
 
-func (u *UtilContext) ParseTime(timeStr string) (time.Time, error) {
+func (u *UtilContext) ParseTime(timeStr string, isLast bool) (time.Time, error) {
 	nowTime := time.Now() //time.Parse("2006-01-02", timeStr)
 
 	if strings.Contains(timeStr, "min") {
@@ -48,7 +48,14 @@ func (u *UtilContext) ParseTime(timeStr string) (time.Time, error) {
 			return nowTime, err
 		}
 
-		year := strconv.FormatInt(int64(nowTime.Year()), 10)
+		yearInt := int64(nowTime.Year())
+
+		if isLast {
+			yearInt--
+		}
+
+		year := strconv.FormatInt(yearInt, 10)
+
 		dayToParse := dateParts[1]
 		if len(dayToParse) < 2 {
 			dayToParse = "0" + dayToParse
