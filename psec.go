@@ -25,6 +25,7 @@ type PSEC struct {
 	logger *slog.Logger
 }
 
+// todo: pass config to constructor instead of confiugrating with seperate mothods
 func New(l *slog.Logger) *PSEC {
 	ec := &PSEC{
 		rctx:   r.GetCDPContext(l),

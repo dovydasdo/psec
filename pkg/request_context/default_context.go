@@ -26,6 +26,7 @@ type DefaultRequestContext struct {
 	BlockFilter *regexp.Regexp
 }
 
+// this context is for now unused
 func New() *DefaultRequestContext {
 	c := &DefaultRequestContext{}
 	c.Filter = regexp.MustCompile(".*")
