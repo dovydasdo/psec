@@ -31,18 +31,19 @@ type CDPContext struct {
 
 	State      *State
 	ProxyAgent ProxyGetter
+	Config     config.ConfCDPLaunch
 }
 
-func GetCDPContext(l *slog.Logger) *CDPContext {
+func GetCDPContext(conf config.ConfCDPLaunch, l *slog.Logger) *CDPContext {
 	return &CDPContext{
 		State:  &State{},
 		logger: l,
+		Config: conf,
 	}
 }
 
 func (c *CDPContext) Initialize() {
 	// if proxy agent has been registered set the proxy
-	conf := config.NewCDPLaunchConf()
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 
 	if bdAgent, ok := c.ProxyAgent.(*BDProxyAgent); ok {
@@ -50,13 +51,13 @@ func (c *CDPContext) Initialize() {
 		opts = append(opts, chromedp.ProxyServer(fmt.Sprintf("http://%v", proxyConf.AuthHost)))
 	}
 
-	opts = append(opts, chromedp.ExecPath(conf.BinPath))
+	opts = append(opts, chromedp.ExecPath(c.Config.BinPath))
 
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 
 	cdpCtx, cf := chromedp.NewContext(allocatorContext)
 
-	c.binPath = conf.BinPath
+	c.binPath = c.Config.BinPath
 	c.cancel = cf
 	c.ctx = cdpCtx
 	c.allocator = allocatorContext
@@ -164,7 +165,7 @@ func (c *CDPContext) Initialize() {
 	})
 
 	// Todo: make configurable
-	injection, err := GetInjection(conf.InjectionPath)
+	injection, err := GetInjection(c.Config.InjectionPath)
 	if err != nil {
 		log.Fatalf("failed to read injection, aborting. Err: %v", err.Error())
 	}
