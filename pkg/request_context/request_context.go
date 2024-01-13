@@ -7,6 +7,6 @@ type Loader interface {
 	ChangeProxy() error
 	GetState() *State
 	ClearState()
-	Do(ins ...interface{}) (string, error)
+	Do(ins ...interface{}) ([]Result, error)
 	Reset()
 }
