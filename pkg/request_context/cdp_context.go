@@ -34,6 +34,14 @@ type CDPContext struct {
 	Config     config.ConfCDPLaunch
 }
 
+type Result struct {
+	Name     string
+	Duration time.Duration
+	Value    interface{}
+	Type     string
+	Error    error
+}
+
 func GetCDPContext(conf config.ConfCDPLaunch, l *slog.Logger) *CDPContext {
 	return &CDPContext{
 		State:  &State{},
@@ -253,8 +261,13 @@ func (c *CDPContext) Reset() {
 	c.Initialize()
 }
 
-func (c *CDPContext) Do(ins ...interface{}) (string, error) {
+func (c *CDPContext) Do(ins ...interface{}) ([]interface{}, error) {
+	result := make([]interface{}, 0)
+
+	doStart := time.Now()
+
 	for _, instruction := range ins {
+		insStart := time.Now()
 		switch v := instruction.(type) {
 		case NavigateInstruction:
 			url := v.URL
@@ -270,10 +283,30 @@ func (c *CDPContext) Do(ins ...interface{}) (string, error) {
 				network.SetBlockedURLS(make([]string, 0)),
 			)
 
+			// todo populate result with performed request data
+
 			if err != nil {
-				return "", err
+				return result, err
+			}
+		case JSEvalInstruction:
+			script := v.Script
+			_ = v.Timeout // not used for now
+			res := Result{
+				Name:     v.Name,
+				Type:     "js_eval",
+				Duration: time.Now().Sub(insStart),
 			}
 
+			var evalResult string
+
+			err := chromedp.Run(c.ctx,
+				chromedp.Evaluate(script, &evalResult),
+			)
+
+			res.Error = err
+			res.Value = evalResult
+
+			result = append(result, res)
 		case string:
 			log.Println(v)
 			continue
@@ -289,7 +322,9 @@ func (c *CDPContext) Do(ins ...interface{}) (string, error) {
 		chromedp.Evaluate(`document.documentElement.outerHTML`, &html),
 	)
 
-	return html, err
+	result = append(result, Result{Type: "html", Value: html, Duration: time.Now().Sub(doStart)})
+
+	return result, err
 }
 
 func (c *CDPContext) Cancel() {

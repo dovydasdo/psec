@@ -1,8 +1,33 @@
 package requestcontext
 
-import "testing"
+import (
+	"log/slog"
+	"testing"
+	"time"
 
-func Init(t *testing.T) {
+	"github.com/dovydasdo/psec/config"
+)
+
+func TestNavigate(t *testing.T) {
+
+	cfg := config.ConfCDPLaunch{
+		BinPath:       "",
+		InjectionPath: "",
+	}
+
+	ctx := GetCDPContext(
+		cfg,
+		slog.Default(),
+	)
+
+	ins := NavigateInstruction{
+		URL:           "https://google.com",
+		DoneCondition: time.Second * 5,
+	}
+
+	ctx.Do(
+		ins,
+	)
 
 }
 
