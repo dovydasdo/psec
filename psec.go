@@ -25,9 +25,14 @@ type PSEC struct {
 	logger *slog.Logger
 }
 
+// todo: pass config to constructor instead of confiugrating with seperate mothods
 func New(l *slog.Logger) *PSEC {
+
+	// temp for testing
+	reqConf := config.NewCDPLaunchConf()
+
 	ec := &PSEC{
-		rctx:   r.GetCDPContext(l),
+		rctx:   r.GetCDPContext(*reqConf, l),
 		uctx:   uc.New(),
 		logger: l,
 	}

@@ -2,6 +2,7 @@ package requestcontext
 
 import (
 	"regexp"
+	"time"
 
 	"github.com/go-rod/rod/lib/proto"
 )
@@ -14,16 +15,29 @@ const (
 	SKIP
 )
 
+type BaseInstruction struct {
+	Name string
+}
+
 type RequestInstruction struct {
+	*BaseInstruction
 	URL    string
 	Method string
 	Filter regexp.Regexp
 }
 
 type NavigateInstruction struct {
+	*BaseInstruction
 	URL           string
 	DoneCondition interface{}
 	Filters       []string
+}
+
+type JSEvalInstruction struct {
+	*BaseInstruction
+	Script  string
+	Timeout time.Duration
+	Result  interface{}
 }
 
 type DoneElVisible string

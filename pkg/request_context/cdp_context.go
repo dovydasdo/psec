@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/dom"
@@ -14,6 +16,7 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/dovydasdo/psec/config"
 	util "github.com/dovydasdo/psec/util/injections"
@@ -31,32 +34,42 @@ type CDPContext struct {
 
 	State      *State
 	ProxyAgent ProxyGetter
+	Config     config.ConfCDPLaunch
 }
 
-func GetCDPContext(l *slog.Logger) *CDPContext {
+type Result struct {
+	Name     string
+	Duration time.Duration
+	Value    interface{}
+	Type     string
+	Error    error
+}
+
+func GetCDPContext(conf config.ConfCDPLaunch, l *slog.Logger) *CDPContext {
 	return &CDPContext{
 		State:  &State{},
 		logger: l,
+		Config: conf,
 	}
 }
 
 func (c *CDPContext) Initialize() {
 	// if proxy agent has been registered set the proxy
-	conf := config.NewCDPLaunchConf()
 	opts := chromedp.DefaultExecAllocatorOptions[:]
+	opts = append(opts, chromedp.Flag("ignore-certificate-errors", true))
 
 	if bdAgent, ok := c.ProxyAgent.(*BDProxyAgent); ok {
 		proxyConf := bdAgent.Config
 		opts = append(opts, chromedp.ProxyServer(fmt.Sprintf("http://%v", proxyConf.AuthHost)))
 	}
 
-	opts = append(opts, chromedp.ExecPath(conf.BinPath))
+	opts = append(opts, chromedp.ExecPath(c.Config.BinPath))
 
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 
 	cdpCtx, cf := chromedp.NewContext(allocatorContext)
 
-	c.binPath = conf.BinPath
+	c.binPath = c.Config.BinPath
 	c.cancel = cf
 	c.ctx = cdpCtx
 	c.allocator = allocatorContext
@@ -82,11 +95,61 @@ func (c *CDPContext) Initialize() {
 					)
 				}()
 			}
+		case *network.EventResponseReceived:
+			if event, ok := c.State.NetworkEvents.Load(ev.RequestID); ok {
+				c.logger.Debug("cdp", "received", ev.Response.URL)
+
+				resp := NetworkResponse{}
+				go func() {
+					c.logger.Debug("cdp", "getting body for url", ev.Response.URL)
+
+					err := chromedp.Run(c.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+						body, err := network.GetResponseBody(ev.RequestID).Do(ctx)
+						resp.Body = string(body)
+						return err
+					}))
+
+					resp.URL = ev.Response.URL
+
+					if err != nil {
+						time.Sleep(time.Second)
+					}
+
+					if e, ok := event.(*NetworkEvent); ok {
+						e.Response = resp
+					}
+				}()
+			}
+
+		case *network.EventRequestWillBeSent:
+			c.logger.Debug("cdp", "request will be sent", ev.Request.URL)
+
+			c.logger.Log(context.Background(), -1, "REQUEST", "url", ev.Request.URL, "id", ev.RequestID)
+			// Continue with request porcessing
+			req := NetworkRequest{}
+			req.Body = ev.Request.PostData
+			req.URL = ev.Request.URL
+			req.Headers = GetHeaders(ev.Request.Headers)
+
+			c.State.NetworkEvents.Store(ev.RequestID, &NetworkEvent{Request: req})
 
 		case *fetch.EventRequestPaused:
-
 			// If there is a response code and status then its a response, let redirects through
 			// TODO: look for a better way to distinguish between requests and responses
+			if ev.ResponseStatusCode == 301 || ev.ResponseStatusCode == 302 {
+				go func() {
+					err := chromedp.Run(c.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+						params := fetch.ContinueRequest(ev.RequestID)
+						params.InterceptResponse = true
+						return params.Do(ctx)
+					}))
+
+					if err != nil {
+						log.Println(err.Error())
+					}
+				}()
+				return
+			}
 			if ev.ResponseStatusCode != 0 {
 				// Continue the response
 				go func() {
@@ -99,54 +162,9 @@ func (c *CDPContext) Initialize() {
 						log.Println(err.Error())
 					}
 				}()
-				// Process Response
-				if event, ok := c.State.NetworkEvents.Load(ev.RequestID); ok && ev.ResponseStatusCode != 301 && ev.ResponseStatusCode != 302 {
-					resp := NetworkResponse{}
-
-					go func() {
-
-						for i := 0; i < 3; i++ {
-							err := chromedp.Run(c.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-								body, err := fetch.GetResponseBody(ev.RequestID).Do(ctx)
-								resp.Body = string(body)
-								return err
-							}))
-
-							resp.URL = ev.Request.URL
-							resp.Headers = GetHeadersResp(ev.ResponseHeaders)
-
-							if err != nil {
-								c.logger.Error("cdp", "message", "failed to get body for request", "error", err.Error())
-								time.Sleep(time.Second)
-								continue
-							}
-
-							if e, ok := event.(*NetworkEvent); ok {
-								e.Response = resp
-							}
-
-							c.logger.Log(context.Background(), -1, "RESPONSE", "url", ev.Request.URL, "status", ev.ResponseStatusCode, "id", ev.RequestID)
-
-							return
-						}
-
-						c.logger.Warn("cdp", "message", "after three tries, failed to get body for request", "url", ev.Request.URL)
-					}()
-
-				} else {
-					c.logger.Warn("cdp", "message", "got a response when there was no request in the statev", "url", ev.Request.URL)
-				}
 
 				return
 			}
-			c.logger.Log(context.Background(), -1, "REQUEST", "url", ev.Request.URL, "id", ev.RequestID)
-			// Continue with request porcessing
-			req := NetworkRequest{}
-			req.Body = ev.Request.PostData
-			req.URL = ev.Request.URL
-			req.Headers = GetHeaders(ev.Request.Headers)
-
-			c.State.NetworkEvents.Store(ev.RequestID, &NetworkEvent{Request: req})
 
 			// Let request pass
 			go func() {
@@ -156,6 +174,8 @@ func (c *CDPContext) Initialize() {
 					return params.Do(ctx)
 				}))
 
+				c.logger.Debug("cdp", "continue done url", ev.Request.URL)
+
 				if err != nil {
 					log.Println(err.Error())
 				}
@@ -163,8 +183,7 @@ func (c *CDPContext) Initialize() {
 		}
 	})
 
-	// Todo: make configurable
-	injection, err := GetInjection(conf.InjectionPath)
+	injection, err := GetInjection(c.Config.InjectionPath)
 	if err != nil {
 		log.Fatalf("failed to read injection, aborting. Err: %v", err.Error())
 	}
@@ -172,53 +191,57 @@ func (c *CDPContext) Initialize() {
 	addInjection := page.AddScriptToEvaluateOnNewDocument(injection)
 	addInjection.RunImmediately = true
 
-	uaInfo := util.GetStaticUAInfo()
+	uaInfo, err := util.GetLatestUAInfo()
+	if err != nil {
+		c.logger.Warn("cdp", "message", "failed to get latest user agent data, static data will be used")
+	}
+
 	overrideUA := emulation.SetUserAgentOverride(uaInfo.UserAgent)
 	overrideUA.AcceptLanguage = uaInfo.AcceptLanguage
 	overrideUA.Platform = uaInfo.Platform
 	overrideUA.UserAgentMetadata = &emulation.UserAgentMetadata{
-		Architecture:    uaInfo.Metadata.Architecture,
-		Bitness:         uaInfo.Metadata.Bitness,
-		Mobile:          uaInfo.Metadata.Mobile,
-		Model:           uaInfo.Metadata.Model,
-		Platform:        uaInfo.Metadata.Platform,
-		PlatformVersion: uaInfo.Metadata.PlatformVersion,
-		Wow64:           uaInfo.Metadata.WOW64,
+		Architecture:    uaInfo.Metadata.JsHighEntropyHints.Architecture,
+		Bitness:         uaInfo.Metadata.JsHighEntropyHints.Bitness,
+		Mobile:          uaInfo.Metadata.JsHighEntropyHints.Mobile,
+		Model:           uaInfo.Metadata.JsHighEntropyHints.Model,
+		Platform:        uaInfo.Metadata.JsHighEntropyHints.Platform,
+		PlatformVersion: uaInfo.Metadata.JsHighEntropyHints.PlatformVersion,
+		Wow64:           uaInfo.Metadata.JsHighEntropyHints.Wow64,
 		Brands: []*emulation.UserAgentBrandVersion{
 			{
-				Brand:   uaInfo.Metadata.Brands[0].Brand,
-				Version: uaInfo.Metadata.Brands[0].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.Brands[0].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.Brands[0].Version,
 			},
 			{
-				Brand:   uaInfo.Metadata.Brands[1].Brand,
-				Version: uaInfo.Metadata.Brands[1].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.Brands[1].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.Brands[1].Version,
 			},
 			{
-				Brand:   uaInfo.Metadata.Brands[2].Brand,
-				Version: uaInfo.Metadata.Brands[2].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.Brands[2].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.Brands[2].Version,
 			},
 		},
 		FullVersionList: []*emulation.UserAgentBrandVersion{
 			{
-				Brand:   uaInfo.Metadata.FullVersionList[0].Brand,
-				Version: uaInfo.Metadata.FullVersionList[0].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.FullVersionList[0].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.FullVersionList[0].Version,
 			},
 			{
-				Brand:   uaInfo.Metadata.FullVersionList[1].Brand,
-				Version: uaInfo.Metadata.FullVersionList[1].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.FullVersionList[1].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.FullVersionList[1].Version,
 			},
 			{
-				Brand:   uaInfo.Metadata.FullVersionList[2].Brand,
-				Version: uaInfo.Metadata.FullVersionList[2].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.FullVersionList[2].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.FullVersionList[2].Version,
 			},
 		},
 	}
 
 	overrideAutomation := emulation.SetAutomationOverride(false)
 
-	chromedp.Run(c.ctx,
-		fetch.Enable().WithHandleAuthRequests(true),
+	err = chromedp.Run(c.ctx,
 		network.Enable(),
+		fetch.Enable().WithHandleAuthRequests(true),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			// Fingerprint stuff
 			_, err := addInjection.Do(ctx)
@@ -238,7 +261,11 @@ func (c *CDPContext) Initialize() {
 
 			return err
 		}),
-		chromedp.Navigate(""))
+		chromedp.Navigate("about:blank"))
+
+	if err != nil {
+		log.Fatalf("failed to start chromedp %v", err)
+	}
 }
 
 func (c *CDPContext) Reset() {
@@ -252,8 +279,17 @@ func (c *CDPContext) Reset() {
 	c.Initialize()
 }
 
-func (c *CDPContext) Do(ins ...interface{}) (string, error) {
+func (c *CDPContext) Close() {
+	c.cancel()
+}
+
+func (c *CDPContext) Do(ins ...interface{}) ([]Result, error) {
+	result := make([]Result, 0)
+
+	doStart := time.Now()
+
 	for _, instruction := range ins {
+		insStart := time.Now()
 		switch v := instruction.(type) {
 		case NavigateInstruction:
 			url := v.URL
@@ -269,10 +305,35 @@ func (c *CDPContext) Do(ins ...interface{}) (string, error) {
 				network.SetBlockedURLS(make([]string, 0)),
 			)
 
-			if err != nil {
-				return "", err
+			res := Result{
+				Type:     "navigate",
+				Duration: time.Now().Sub(insStart),
+				Error:    err,
 			}
 
+			result = append(result, res)
+
+			if err != nil {
+				return result, err
+			}
+		case JSEvalInstruction:
+			script := v.Script
+			_ = v.Timeout // not used for now
+			res := Result{
+				Type:     "js_eval",
+				Duration: time.Now().Sub(insStart),
+			}
+
+			err := chromedp.Run(c.ctx,
+				runtime.Enable(),
+				chromedp.Evaluate(script, v.Result),
+			)
+
+			// this is stupid
+			res.Value = v.Result
+
+			res.Error = err
+			result = append(result, res)
 		case string:
 			log.Println(v)
 			continue
@@ -288,7 +349,8 @@ func (c *CDPContext) Do(ins ...interface{}) (string, error) {
 		chromedp.Evaluate(`document.documentElement.outerHTML`, &html),
 	)
 
-	return html, err
+	result = append(result, Result{Type: "html", Value: html, Duration: time.Now().Sub(doStart)})
+	return result, err
 }
 
 func (c *CDPContext) Cancel() {
@@ -333,10 +395,19 @@ func (c CDPContext) GetDoneAction(condition interface{}) (chromedp.Action, error
 		return chromedp.ActionFunc(func(ctx context.Context) error {
 			//TODO: implement without polling
 			toBreak := false
+			cURL, err := url.Parse(string(cond))
+			if err != nil {
+				return nil
+			}
 			for i := 0; i < 20; i++ {
 				c.State.NetworkEvents.Range(func(key, value any) bool {
 					if v, ok := value.(*NetworkEvent); ok {
-						if v.Response.URL == string(cond) {
+						vURL, err := url.Parse(v.Response.URL)
+						if err != nil {
+							return true
+						}
+
+						if normalizeURL(vURL) == normalizeURL(cURL) {
 							toBreak = true
 							return true
 						}
@@ -355,7 +426,7 @@ func (c CDPContext) GetDoneAction(condition interface{}) (chromedp.Action, error
 			return nil
 		}), nil
 	default:
-		return nil, errors.New("the provided contition was not recognised")
+		return nil, errors.New("the provided condition was not recognised")
 	}
 }
 
@@ -366,8 +437,6 @@ func GetHeaders(protoHeaders network.Headers) map[string]string {
 			hto[hName] = val
 			continue
 		}
-
-		log.Printf("some funky header: %v", hName)
 	}
 
 	return hto
@@ -389,4 +458,15 @@ func GetInjection(path string) (string, error) {
 	}
 
 	return string(file[:]), nil
+}
+
+func normalizeURL(u *url.URL) string {
+	u.Host = strings.ToLower(u.Host)
+	if len(u.Path) == 0 {
+		return u.String()
+	}
+	if u.Path[len(u.Path)-1:] == "/" {
+		u.Path = strings.TrimSuffix(u.Path, "/")
+	}
+	return u.String()
 }
