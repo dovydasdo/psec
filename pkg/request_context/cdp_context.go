@@ -97,7 +97,6 @@ func (c *CDPContext) Initialize() {
 			}
 		case *network.EventResponseReceived:
 			if event, ok := c.State.NetworkEvents.Load(ev.RequestID); ok {
-				c.logger.Debug("cdp", "received", ev.Response.URL)
 
 				resp := NetworkResponse{}
 				go func() {
@@ -122,9 +121,6 @@ func (c *CDPContext) Initialize() {
 			}
 
 		case *network.EventRequestWillBeSent:
-			c.logger.Debug("cdp", "request will be sent", ev.Request.URL)
-
-			c.logger.Log(context.Background(), -1, "REQUEST", "url", ev.Request.URL, "id", ev.RequestID)
 			// Continue with request porcessing
 			req := NetworkRequest{}
 			req.Body = ev.Request.PostData
@@ -174,7 +170,7 @@ func (c *CDPContext) Initialize() {
 					return params.Do(ctx)
 				}))
 
-				c.logger.Debug("cdp", "continue done url", ev.Request.URL)
+				c.logger.Debug("cdp", "continue done for url", ev.Request.URL)
 
 				if err != nil {
 					log.Println(err.Error())
