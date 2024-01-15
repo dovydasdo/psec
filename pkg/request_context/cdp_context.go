@@ -191,7 +191,11 @@ func (c *CDPContext) Initialize() {
 	addInjection := page.AddScriptToEvaluateOnNewDocument(injection)
 	addInjection.RunImmediately = true
 
-	uaInfo := util.GetStaticUAInfo()
+	uaInfo, err := util.GetLatestUAInfo()
+	if err != nil {
+		c.logger.Warn("cdp", "message", "failed to get latest user agent data, static data will be used")
+	}
+
 	overrideUA := emulation.SetUserAgentOverride(uaInfo.UserAgent)
 	overrideUA.AcceptLanguage = uaInfo.AcceptLanguage
 	overrideUA.Platform = uaInfo.Platform
@@ -404,7 +408,6 @@ func (c CDPContext) GetDoneAction(condition interface{}) (chromedp.Action, error
 						}
 
 						if normalizeURL(vURL) == normalizeURL(cURL) {
-							c.logger.Debug("cdp", "mached", true)
 							toBreak = true
 							return true
 						}
@@ -423,7 +426,7 @@ func (c CDPContext) GetDoneAction(condition interface{}) (chromedp.Action, error
 			return nil
 		}), nil
 	default:
-		return nil, errors.New("the provided contition was not recognised")
+		return nil, errors.New("the provided condition was not recognised")
 	}
 }
 
@@ -434,8 +437,6 @@ func GetHeaders(protoHeaders network.Headers) map[string]string {
 			hto[hName] = val
 			continue
 		}
-
-		log.Printf("some funky header: %v", hName)
 	}
 
 	return hto

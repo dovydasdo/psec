@@ -78,8 +78,6 @@ func TestNavigate(t *testing.T) {
 		return true
 	})
 
-	t.Logf("is in state: %v", isInState)
-
 	if !isInState {
 		t.Errorf("url %v was not found in state after performing the request", testUrl)
 	}
@@ -117,7 +115,6 @@ func TestEmulation(t *testing.T) {
 	for _, res := range result {
 		if res.Type == "js_eval" {
 			if v, ok := res.Value.(*bool); ok {
-				t.Logf("return: %v", v)
 				if *v != false {
 					t.Log("navigator is on")
 					t.Fail()
