@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/dom"
@@ -14,6 +16,7 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/dovydasdo/psec/config"
 	util "github.com/dovydasdo/psec/util/injections"
@@ -133,21 +136,21 @@ func (c *CDPContext) Initialize() {
 		case *fetch.EventRequestPaused:
 			// If there is a response code and status then its a response, let redirects through
 			// TODO: look for a better way to distinguish between requests and responses
-			if ev.ResponseStatusCode != 0 {
-				if ev.ResponseStatusCode == 301 || ev.ResponseStatusCode == 302 {
-					go func() {
-						err := chromedp.Run(c.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-							params := fetch.ContinueRequest(ev.RequestID)
-							params.InterceptResponse = true
-							return params.Do(ctx)
-						}))
+			if ev.ResponseStatusCode == 301 || ev.ResponseStatusCode == 302 {
+				go func() {
+					err := chromedp.Run(c.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+						params := fetch.ContinueRequest(ev.RequestID)
+						params.InterceptResponse = true
+						return params.Do(ctx)
+					}))
 
-						if err != nil {
-							log.Println(err.Error())
-						}
-					}()
-					return
-				}
+					if err != nil {
+						log.Println(err.Error())
+					}
+				}()
+				return
+			}
+			if ev.ResponseStatusCode != 0 {
 				// Continue the response
 				go func() {
 					err := chromedp.Run(c.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
@@ -180,7 +183,6 @@ func (c *CDPContext) Initialize() {
 		}
 	})
 
-	// Todo: make configurable
 	injection, err := GetInjection(c.Config.InjectionPath)
 	if err != nil {
 		log.Fatalf("failed to read injection, aborting. Err: %v", err.Error())
@@ -194,39 +196,39 @@ func (c *CDPContext) Initialize() {
 	overrideUA.AcceptLanguage = uaInfo.AcceptLanguage
 	overrideUA.Platform = uaInfo.Platform
 	overrideUA.UserAgentMetadata = &emulation.UserAgentMetadata{
-		Architecture:    uaInfo.Metadata.Architecture,
-		Bitness:         uaInfo.Metadata.Bitness,
-		Mobile:          uaInfo.Metadata.Mobile,
-		Model:           uaInfo.Metadata.Model,
-		Platform:        uaInfo.Metadata.Platform,
-		PlatformVersion: uaInfo.Metadata.PlatformVersion,
-		Wow64:           uaInfo.Metadata.WOW64,
+		Architecture:    uaInfo.Metadata.JsHighEntropyHints.Architecture,
+		Bitness:         uaInfo.Metadata.JsHighEntropyHints.Bitness,
+		Mobile:          uaInfo.Metadata.JsHighEntropyHints.Mobile,
+		Model:           uaInfo.Metadata.JsHighEntropyHints.Model,
+		Platform:        uaInfo.Metadata.JsHighEntropyHints.Platform,
+		PlatformVersion: uaInfo.Metadata.JsHighEntropyHints.PlatformVersion,
+		Wow64:           uaInfo.Metadata.JsHighEntropyHints.Wow64,
 		Brands: []*emulation.UserAgentBrandVersion{
 			{
-				Brand:   uaInfo.Metadata.Brands[0].Brand,
-				Version: uaInfo.Metadata.Brands[0].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.Brands[0].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.Brands[0].Version,
 			},
 			{
-				Brand:   uaInfo.Metadata.Brands[1].Brand,
-				Version: uaInfo.Metadata.Brands[1].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.Brands[1].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.Brands[1].Version,
 			},
 			{
-				Brand:   uaInfo.Metadata.Brands[2].Brand,
-				Version: uaInfo.Metadata.Brands[2].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.Brands[2].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.Brands[2].Version,
 			},
 		},
 		FullVersionList: []*emulation.UserAgentBrandVersion{
 			{
-				Brand:   uaInfo.Metadata.FullVersionList[0].Brand,
-				Version: uaInfo.Metadata.FullVersionList[0].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.FullVersionList[0].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.FullVersionList[0].Version,
 			},
 			{
-				Brand:   uaInfo.Metadata.FullVersionList[1].Brand,
-				Version: uaInfo.Metadata.FullVersionList[1].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.FullVersionList[1].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.FullVersionList[1].Version,
 			},
 			{
-				Brand:   uaInfo.Metadata.FullVersionList[2].Brand,
-				Version: uaInfo.Metadata.FullVersionList[2].Version,
+				Brand:   uaInfo.Metadata.JsHighEntropyHints.FullVersionList[2].Brand,
+				Version: uaInfo.Metadata.JsHighEntropyHints.FullVersionList[2].Version,
 			},
 		},
 	}
@@ -299,9 +301,7 @@ func (c *CDPContext) Do(ins ...interface{}) ([]Result, error) {
 				network.SetBlockedURLS(make([]string, 0)),
 			)
 
-			// todo populate result with performed request data
 			res := Result{
-				// Name:     v.Name,
 				Type:     "navigate",
 				Duration: time.Now().Sub(insStart),
 				Error:    err,
@@ -316,19 +316,19 @@ func (c *CDPContext) Do(ins ...interface{}) ([]Result, error) {
 			script := v.Script
 			_ = v.Timeout // not used for now
 			res := Result{
-				Name:     v.Name,
 				Type:     "js_eval",
 				Duration: time.Now().Sub(insStart),
 			}
 
-			var evalResult string
-
 			err := chromedp.Run(c.ctx,
-				chromedp.Evaluate(script, &evalResult),
+				runtime.Enable(),
+				chromedp.Evaluate(script, v.Result),
 			)
 
+			// this is stupid
+			res.Value = v.Result
+
 			res.Error = err
-			res.Value = evalResult
 			result = append(result, res)
 		case string:
 			log.Println(v)
@@ -346,7 +346,6 @@ func (c *CDPContext) Do(ins ...interface{}) ([]Result, error) {
 	)
 
 	result = append(result, Result{Type: "html", Value: html, Duration: time.Now().Sub(doStart)})
-
 	return result, err
 }
 
@@ -392,10 +391,20 @@ func (c CDPContext) GetDoneAction(condition interface{}) (chromedp.Action, error
 		return chromedp.ActionFunc(func(ctx context.Context) error {
 			//TODO: implement without polling
 			toBreak := false
+			cURL, err := url.Parse(string(cond))
+			if err != nil {
+				return nil
+			}
 			for i := 0; i < 20; i++ {
 				c.State.NetworkEvents.Range(func(key, value any) bool {
 					if v, ok := value.(*NetworkEvent); ok {
-						if v.Response.URL == string(cond) {
+						vURL, err := url.Parse(v.Response.URL)
+						if err != nil {
+							return true
+						}
+
+						if normalizeURL(vURL) == normalizeURL(cURL) {
+							c.logger.Debug("cdp", "mached", true)
 							toBreak = true
 							return true
 						}
@@ -448,4 +457,15 @@ func GetInjection(path string) (string, error) {
 	}
 
 	return string(file[:]), nil
+}
+
+func normalizeURL(u *url.URL) string {
+	u.Host = strings.ToLower(u.Host)
+	if len(u.Path) == 0 {
+		return u.String()
+	}
+	if u.Path[len(u.Path)-1:] == "/" {
+		u.Path = strings.TrimSuffix(u.Path, "/")
+	}
+	return u.String()
 }

@@ -36,7 +36,8 @@ type NavigateInstruction struct {
 type JSEvalInstruction struct {
 	*BaseInstruction
 	Script  string
-	Timeout time.Time
+	Timeout time.Duration
+	Result  interface{}
 }
 
 type DoneElVisible string

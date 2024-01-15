@@ -1,9 +1,13 @@
 package requestcontext
 
 import (
+	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/dovydasdo/psec/config"
 )
@@ -15,27 +19,31 @@ func (leveler) Level() slog.Level {
 	return -4
 }
 
+const ServerPort = 3000
+
 func TestNavigate(t *testing.T) {
-	// cfg := config.ConfCDPLaunch{
-	// 	BinPath:       "/home/ddom/Documents/cshell/chrome/chrome-linux64/chrome-headless-shell",
-	// 	InjectionPath: "/home/ddom/coding/psec/util/injections/stealth.min.js",
-	// }
-	cfg := config.ConfCDPLaunch{
-		BinPath:       "/usr/bin/google-chrome",
-		InjectionPath: "/home/ddom/coding/psec/util/injections/stealth.min.js",
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "<html><body><h1>Test</h1></body></html>")
+	}))
+	defer ts.Close()
+
+	cfg := config.NewCDPLaunchConf()
+	if cfg == nil {
+		t.Fatalf("failed to read config from env variables")
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: leveler{}}))
 
 	ctx := GetCDPContext(
-		cfg,
+		*cfg,
 		logger,
 	)
 
 	ctx.Initialize()
 	defer ctx.Close()
 
-	testUrl := "https://news.ycombinator.com/"
+	testUrl := ts.URL
 
 	ins := NavigateInstruction{
 		URL:           testUrl,
@@ -62,7 +70,7 @@ func TestNavigate(t *testing.T) {
 
 	state.NetworkEvents.Range(func(key, value interface{}) bool {
 		if val, ok := value.(*NetworkEvent); ok {
-			if val.Response.URL == testUrl {
+			if val.Response.URL == testUrl || val.Response.URL == testUrl+"/" {
 				isInState = true
 			}
 		}
@@ -77,7 +85,48 @@ func TestNavigate(t *testing.T) {
 	}
 }
 
-// TODO: test injection
-// TODO: test closing
-// TODO: test navigation
+func TestEmulation(t *testing.T) {
+	cfg := config.NewCDPLaunchConf()
+	if cfg == nil {
+		t.Fatalf("failed to read config from env variables")
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: leveler{}}))
+
+	ctx := GetCDPContext(
+		*cfg,
+		logger,
+	)
+
+	ctx.Initialize()
+	defer ctx.Close()
+
+	var evalRes bool
+
+	ins := JSEvalInstruction{
+		Script:  "navigator.webdriver",
+		Timeout: time.Second,
+		Result:  &evalRes,
+	}
+
+	result, err := ctx.Do(ins)
+	if err != nil {
+		t.Errorf("failed to eval script: %v", err)
+	}
+
+	for _, res := range result {
+		if res.Type == "js_eval" {
+			if v, ok := res.Value.(*bool); ok {
+				t.Logf("return: %v", v)
+				if *v != false {
+					t.Log("navigator is on")
+					t.Fail()
+				}
+
+			}
+		}
+	}
+
+}
+
 // TODO: test proxy
