@@ -32,7 +32,7 @@ func New() *UtilContext {
 	return &UtilContext{}
 }
 
-func (u *UtilContext) ParseTime(timeStr string, isLast bool) (time.Time, error) {
+func ParseTime(timeStr string, isLast bool) (time.Time, error) {
 	nowTime := time.Now() //time.Parse("2006-01-02", timeStr)
 
 	if strings.Contains(timeStr, "min") {
@@ -119,7 +119,7 @@ func getMountIndex(mounth string) (string, error) {
 	}
 }
 
-func (u *UtilContext) GetBlockList(letThrough []string, state *requestcontext.State) ([]string, error) {
+func GetBlockList(letThrough []string, state *requestcontext.State) ([]string, error) {
 	filters := make([]string, 0)
 
 	state.NetworkEvents.Range(func(key, value interface{}) bool {
@@ -142,7 +142,7 @@ func (u *UtilContext) GetBlockList(letThrough []string, state *requestcontext.St
 	return filters, nil
 }
 
-func (u *UtilContext) GetHostBlockList(letThrough []string, state *requestcontext.State) ([]string, error) {
+func GetHostBlockList(letThrough []string, state *requestcontext.State) ([]string, error) {
 	filters := make([]string, 0)
 	state.NetworkEvents.Range(func(key, value interface{}) bool {
 		block := true
@@ -170,8 +170,7 @@ func (u *UtilContext) GetHostBlockList(letThrough []string, state *requestcontex
 	return filters, nil
 }
 
-func (u *UtilContext) SaveBlockList(list map[string][]string, path string) error {
-
+func SaveBlockList(list map[string][]string, path string) error {
 	json, err := json.Marshal(list)
 	if err != nil {
 		return err
@@ -182,7 +181,7 @@ func (u *UtilContext) SaveBlockList(list map[string][]string, path string) error
 	return err
 }
 
-func (u *UtilContext) LoadBlockList(path string) (map[string][]string, error) {
+func LoadBlockList(path string) (map[string][]string, error) {
 	jsonFile, err := os.Open(path)
 	if err != nil {
 		return nil, err

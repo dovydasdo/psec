@@ -14,7 +14,7 @@ import (
 
 const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
 
-type ExtractionFunc func(c r.Loader, s sc.Saver, u uc.UtilInterface) error
+type ExtractionFunc func(c r.Loader, s sc.Saver) error
 
 type PSEC struct {
 	rctx   r.Loader
@@ -27,13 +27,11 @@ type PSEC struct {
 
 // todo: pass config to constructor instead of confiugrating with seperate mothods
 func New(l *slog.Logger) *PSEC {
-
 	// temp for testing
 	reqConf := config.NewCDPLaunchConf()
 
 	ec := &PSEC{
 		rctx:   r.GetCDPContext(*reqConf, l),
-		uctx:   uc.New(),
 		logger: l,
 	}
 
@@ -107,7 +105,7 @@ func (c *PSEC) Start(limit int) error {
 
 	// TODO: allow custom actions from errors
 	for i := 0; i < limit; i++ {
-		err := c.cFunc(c.rctx, c.sctx, c.uctx)
+		err := c.cFunc(c.rctx, c.sctx)
 
 		switch v := err.(type) {
 		case nil:
