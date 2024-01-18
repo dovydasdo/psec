@@ -25,14 +25,20 @@ type PSEC struct {
 	logger *slog.Logger
 }
 
-// todo: pass config to constructor instead of confiugrating with seperate mothods
-func New(l *slog.Logger) *PSEC {
-	// temp for testing
-	reqConf := config.NewCDPLaunchConf()
-
+func New(options *Options) *PSEC {
 	ec := &PSEC{
-		rctx:   r.GetCDPContext(*reqConf, l),
-		logger: l,
+		logger: options.Logger,
+	}
+
+	for _, rao := range options.RequestAgentsOpts {
+		switch v := rao.(type) {
+		case *(r.CDPOptions):
+			ec.rctx = r.GetCDPContext(v, ec.logger)
+			// only one allowed for now
+			break
+		default:
+
+		}
 	}
 
 	return ec

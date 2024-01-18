@@ -18,7 +18,6 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
-	"github.com/dovydasdo/psec/config"
 	util "github.com/dovydasdo/psec/util/injections"
 )
 
@@ -34,7 +33,7 @@ type CDPContext struct {
 
 	State      *State
 	ProxyAgent ProxyGetter
-	Config     config.ConfCDPLaunch
+	Options    *CDPOptions
 }
 
 type Result struct {
@@ -45,11 +44,11 @@ type Result struct {
 	Error    error
 }
 
-func GetCDPContext(conf config.ConfCDPLaunch, l *slog.Logger) *CDPContext {
+func GetCDPContext(options *CDPOptions, l *slog.Logger) *CDPContext {
 	return &CDPContext{
-		State:  &State{},
-		logger: l,
-		Config: conf,
+		State:   &State{},
+		logger:  l,
+		Options: options,
 	}
 }
 
@@ -63,13 +62,13 @@ func (c *CDPContext) Initialize() {
 		opts = append(opts, chromedp.ProxyServer(fmt.Sprintf("http://%v", proxyConf.AuthHost)))
 	}
 
-	opts = append(opts, chromedp.ExecPath(c.Config.BinPath))
+	opts = append(opts, chromedp.ExecPath(c.Options.BinPath))
 
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 
 	cdpCtx, cf := chromedp.NewContext(allocatorContext)
 
-	c.binPath = c.Config.BinPath
+	c.binPath = c.Options.BinPath
 	c.cancel = cf
 	c.ctx = cdpCtx
 	c.allocator = allocatorContext
@@ -179,7 +178,7 @@ func (c *CDPContext) Initialize() {
 		}
 	})
 
-	injection, err := GetInjection(c.Config.InjectionPath)
+	injection, err := GetInjection(c.Options.InjectionPath)
 	if err != nil {
 		log.Fatalf("failed to read injection, aborting. Err: %v", err.Error())
 	}
