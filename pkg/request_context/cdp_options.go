@@ -1,10 +1,13 @@
 package requestcontext
 
+import "log/slog"
+
 type CDPOption func(*CDPOptions)
 
 type CDPOptions struct {
 	BinPath       string
 	InjectionPath string
+	Logger        *slog.Logger
 }
 
 func NewCDPOptions(setters []CDPOption) *CDPOptions {
@@ -30,5 +33,11 @@ func WithBinPath(path string) CDPOption {
 func WithInjectionPath(path string) CDPOption {
 	return func(c *CDPOptions) {
 		c.InjectionPath = path
+	}
+}
+
+func WithLogger(logger *slog.Logger) CDPOption {
+	return func(c *CDPOptions) {
+		c.Logger = logger
 	}
 }

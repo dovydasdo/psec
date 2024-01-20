@@ -21,6 +21,7 @@ type ProxyAuth struct {
 	Server   string
 	Username string
 	Password string
+	AuthName string
 }
 
 type PSECProxyAgent struct {

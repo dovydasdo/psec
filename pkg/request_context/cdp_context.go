@@ -28,12 +28,12 @@ type CDPContext struct {
 	allocator       context.Context
 	allocatorCancel context.CancelFunc
 
-	binPath string
-	logger  *slog.Logger
+	binPath       string
+	injectionPath string
+	logger        *slog.Logger
 
 	State      *State
 	ProxyAgent ProxyGetter
-	Options    *CDPOptions
 }
 
 type Result struct {
@@ -44,31 +44,31 @@ type Result struct {
 	Error    error
 }
 
-func GetCDPContext(options *CDPOptions, l *slog.Logger) *CDPContext {
+func GetCDPContext(options *CDPOptions) *CDPContext {
 	return &CDPContext{
-		State:   &State{},
-		logger:  l,
-		Options: options,
+		State:         &State{},
+		logger:        options.Logger,
+		binPath:       options.BinPath,
+		injectionPath: options.InjectionPath,
 	}
 }
 
-func (c *CDPContext) Initialize() {
+func (c *CDPContext) Initialize() error {
 	// if proxy agent has been registered set the proxy
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 	opts = append(opts, chromedp.Flag("ignore-certificate-errors", true))
 
 	if bdAgent, ok := c.ProxyAgent.(*BDProxyAgent); ok {
-		proxyConf := bdAgent.Config
-		opts = append(opts, chromedp.ProxyServer(fmt.Sprintf("http://%v", proxyConf.AuthHost)))
+		opts = append(opts, chromedp.ProxyServer(fmt.Sprintf("http://%v", bdAgent.Auth.Server)))
 	}
 
-	opts = append(opts, chromedp.ExecPath(c.Options.BinPath))
+	opts = append(opts, chromedp.ExecPath(c.binPath))
 
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 
 	cdpCtx, cf := chromedp.NewContext(allocatorContext)
 
-	c.binPath = c.Options.BinPath
+	c.binPath = c.binPath
 	c.cancel = cf
 	c.ctx = cdpCtx
 	c.allocator = allocatorContext
@@ -178,9 +178,10 @@ func (c *CDPContext) Initialize() {
 		}
 	})
 
-	injection, err := GetInjection(c.Options.InjectionPath)
+	injection, err := GetInjection(c.injectionPath)
 	if err != nil {
-		log.Fatalf("failed to read injection, aborting. Err: %v", err.Error())
+		c.logger.Error("cdp", "failed to read injection, aborting. Err: %v", err.Error())
+		return err
 	}
 
 	addInjection := page.AddScriptToEvaluateOnNewDocument(injection)
@@ -234,7 +235,7 @@ func (c *CDPContext) Initialize() {
 
 	overrideAutomation := emulation.SetAutomationOverride(false)
 
-	err = chromedp.Run(c.ctx,
+	return chromedp.Run(c.ctx,
 		network.Enable(),
 		fetch.Enable().WithHandleAuthRequests(true),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -257,10 +258,6 @@ func (c *CDPContext) Initialize() {
 			return err
 		}),
 		chromedp.Navigate("about:blank"))
-
-	if err != nil {
-		log.Fatalf("failed to start chromedp %v", err)
-	}
 }
 
 func (c *CDPContext) Reset() {

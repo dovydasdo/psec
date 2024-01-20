@@ -1,8 +1,6 @@
 package psec
 
 import (
-	rc "github.com/dovydasdo/psec/pkg/request_context"
-	savecontext "github.com/dovydasdo/psec/pkg/save_context"
 	"log/slog"
 )
 
@@ -10,7 +8,8 @@ type Option func(opts *Options)
 
 type Options struct {
 	RequestAgentsOpts []interface{}
-	Savers            []interface{}
+	SaverOpts         []interface{}
+	ProxyAgentOpts    []interface{}
 	Logger            *slog.Logger
 }
 
@@ -21,33 +20,29 @@ func NewOptions(setters []Option) *Options {
 		setter(options)
 	}
 
-	if len(options.RequestAgentsOpts) == 0 {
-		cdpOpts := rc.NewCDPOptions(
-			[]rc.CDPOption{
-				rc.WithInjectionPath("./injection.js"),
-			},
-		)
-
-		options.Savers = append(options.Savers, cdpOpts)
-	}
-
 	return options
 }
 
-func WithRequestAgent(agent rc.CDPOptions) Option {
+func WithRequestAgent(agent interface{}) Option {
 	return func(opts *Options) {
 		opts.RequestAgentsOpts = append(opts.RequestAgentsOpts, agent)
 	}
 }
 
-func WithSaver(saver savecontext.Saver) Option {
+func WithSaver(saver interface{}) Option {
 	return func(opts *Options) {
-		opts.Savers = append(opts.Savers, saver)
+		opts.SaverOpts = append(opts.SaverOpts, saver)
 	}
 }
 
 func WithLogger(logger *slog.Logger) Option {
 	return func(opts *Options) {
 		opts.Logger = logger
+	}
+}
+
+func WithProxyAgent(agent interface{}) Option {
+	return func(opts *Options) {
+		opts.ProxyAgentOpts = append(opts.ProxyAgentOpts, agent)
 	}
 }
