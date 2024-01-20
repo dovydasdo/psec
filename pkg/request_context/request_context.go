@@ -3,7 +3,7 @@ package requestcontext
 type Loader interface {
 	RegisterProxyAgent(a ProxyGetter)
 	SetBinPath(path string)
-	Initialize()
+	Initialize() error
 	ChangeProxy() error
 	GetState() *State
 	ClearState()

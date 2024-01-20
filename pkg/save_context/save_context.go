@@ -6,13 +6,10 @@ import (
 	"log/slog"
 	"reflect"
 
-	"github.com/dovydasdo/psec/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
-
-const fmtDBString = "host=%s user=%s password=%s dbname=%s port=%d sslmode=disable"
 
 type SaveFunc func(saver Saver, data interface{}) error
 
@@ -28,24 +25,17 @@ type PSQLSaver struct {
 	logger *slog.Logger
 }
 
-func NewPSQLSaver(cfg *config.Conf, l *slog.Logger) *PSQLSaver {
-	var logLevel gormlogger.LogLevel
-	if cfg.DB.Debug {
-		logLevel = gormlogger.Info
-	} else {
-		logLevel = gormlogger.Error
-	}
-
-	dbString := fmt.Sprintf(fmtDBString, cfg.DB.Host, cfg.DB.Username, cfg.DB.Password, cfg.DB.DBName, cfg.DB.Port)
-
-	db, err := gorm.Open(postgres.Open(dbString), &gorm.Config{Logger: gormlogger.Default.LogMode(logLevel)})
+func NewPSQLSaver(opts *PSQLOptions) *PSQLSaver {
+	// TODO: replace gorm with some thinner psql wrapper
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: opts.ConString,
+	}), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Info)})
 	if err != nil {
-		// logger.Fatal().Err(err).Msg("DB connection start failure")
 		log.Panic("failed to open db")
 	}
 	return &PSQLSaver{
 		db:     db,
-		logger: l,
+		logger: &opts.Logger,
 	}
 }
 

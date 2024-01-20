@@ -35,9 +35,16 @@ func TestNavigate(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: leveler{}}))
 
+	cdpOptions := NewCDPOptions(
+		[]CDPOption{
+			WithInjectionPath(cfg.InjectionPath),
+			WithBinPath(cfg.BinPath),
+			WithLogger(logger),
+		},
+	)
+
 	ctx := GetCDPContext(
-		*cfg,
-		logger,
+		cdpOptions,
 	)
 
 	ctx.Initialize()
@@ -90,10 +97,16 @@ func TestEmulation(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: leveler{}}))
+	cdpOptions := NewCDPOptions(
+		[]CDPOption{
+			WithInjectionPath(cfg.InjectionPath),
+			WithBinPath(cfg.BinPath),
+			WithLogger(logger),
+		},
+	)
 
 	ctx := GetCDPContext(
-		*cfg,
-		logger,
+		cdpOptions,
 	)
 
 	ctx.Initialize()
