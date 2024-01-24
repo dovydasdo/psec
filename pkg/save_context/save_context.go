@@ -1,81 +1,61 @@
 package savecontext
 
 import (
-	"fmt"
-	"log"
+	"context"
 	"log/slog"
-	"reflect"
+	"sync"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type SaveFunc func(saver Saver, data interface{}) error
-
+// TODO: make ctx handling better in the whole project
 type Saver interface {
-	Save(data interface{}) error
-	Migrate(data interface{}) error
-	Exists(id uint, dType interface{}) (interface{}, error)
-	CustomSave(saveF SaveFunc, data interface{}) error
+	Exec(query string, data ...interface{}) (string, error)
+	QueryExists(query string, result any, data ...interface{}) (interface{}, error)
 }
 
 type PSQLSaver struct {
-	db     *gorm.DB
+	db     *pgxpool.Pool
 	logger *slog.Logger
 }
 
-func NewPSQLSaver(opts *PSQLOptions) *PSQLSaver {
-	// TODO: replace gorm with some thinner psql wrapper
-	db, err := gorm.Open(postgres.New(postgres.Config{
-		DSN: opts.ConString,
-	}), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Info)})
+var (
+	pgInstance *PSQLSaver
+	pgOnce     sync.Once
+)
+
+func NewPSQLSaver(ctx context.Context, opts *PSQLOptions) (*PSQLSaver, error) {
+	var err error
+
+	pgOnce.Do(func() {
+		var pool *pgxpool.Pool
+		pool, err = pgxpool.New(ctx, opts.ConString)
+		pgInstance = &PSQLSaver{db: pool, logger: opts.Logger}
+	})
+
+	return pgInstance, err
+}
+
+func (s *PSQLSaver) Exec(query string, data ...interface{}) (string, error) {
+	s.logger.Debug("psql", "executing", query, "args", data)
+	st, err := s.db.Exec(context.Background(), query, data)
 	if err != nil {
-		log.Panic("failed to open db")
+		s.logger.Error("psql", "failed", query, "error", err)
 	}
-	return &PSQLSaver{
-		db:     db,
-		logger: &opts.Logger,
+	return st.String(), err
+}
+
+func (s *PSQLSaver) QueryExists(query string, result any, data ...interface{}) (interface{}, error) {
+	s.logger.Debug("psql", "executing", query, "args", data)
+	row := s.db.QueryRow(context.Background(), query, result)
+	err := row.Scan(result)
+	if err != nil {
+		s.logger.Error("psql", "failed", query, "error", err)
 	}
+	return result, err
 }
 
-func (s *PSQLSaver) Save(data interface{}) error {
-	//todo: handle migration and make this better. For the record i dont like this but it do be what it do be
-	s.db.Create(data)
-	return nil
-}
-
-func (s *PSQLSaver) CustomSave(saveF SaveFunc, data interface{}) error {
-	return saveF(s, data)
-}
-
-func (s *PSQLSaver) Exists(id uint, dType interface{}) (interface{}, error) {
-	// Cringe
-	dataType := reflect.TypeOf(dType).Elem() // Get the type of the element (assuming data is a pointer)
-
-	// Create a new instance of the type
-	newData := reflect.New(dataType).Interface()
-	r := s.db.Model(dType).Where("id = ?", id).Limit(1).Find(&newData)
-	if r.Error != nil {
-		return false, &QueryFailedError{
-			Message: r.Error.Error(),
-			BaseErr: r.Error,
-		}
-	}
-
-	if r.RowsAffected == 0 {
-		return nil, fmt.Errorf("not found")
-	}
-
-	return newData, nil
-}
-
-func (s *PSQLSaver) Migrate(data interface{}) error {
-	t := reflect.TypeOf(data)
-	err := s.db.Model(&t).AutoMigrate(data)
-	return err
-}
-
+// ?
 type QueryFailedError struct {
 	Message string
 	BaseErr error

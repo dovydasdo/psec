@@ -1,12 +1,12 @@
 package psec
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 
 	r "github.com/dovydasdo/psec/pkg/request_context"
 	sc "github.com/dovydasdo/psec/pkg/save_context"
-	uc "github.com/dovydasdo/psec/pkg/util_context"
 	perrors "github.com/dovydasdo/psec/util/errors"
 )
 
@@ -15,7 +15,6 @@ type ExtractionFunc func(c r.Loader, s sc.Saver) error
 type PSEC struct {
 	rctx   r.Loader
 	sctx   sc.Saver
-	uctx   uc.UtilInterface
 	cFunc  ExtractionFunc
 	logger *slog.Logger
 }
@@ -48,7 +47,11 @@ func New(options *Options) *PSEC {
 				// only single for now
 				break
 			}
-			ec.sctx = sc.NewPSQLSaver(v)
+			var err error
+			ec.sctx, err = sc.NewPSQLSaver(context.TODO(), v)
+			if err != nil {
+				ec.logger.Error("psec", "message", "failed to get psql saver", "error", err)
+			}
 		default:
 			ec.logger.Warn("init", "message", "provided saver is not supported")
 		}
