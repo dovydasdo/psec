@@ -10,7 +10,7 @@ import (
 
 // TODO: make ctx handling better in the whole project
 type Saver interface {
-	Exec(query string, data ...interface{}) (string, error)
+	Exec(query string, data ...any) (string, error)
 	QueryExists(query string, result any, data ...interface{}) (interface{}, error)
 }
 
@@ -36,9 +36,9 @@ func NewPSQLSaver(ctx context.Context, opts *PSQLOptions) (*PSQLSaver, error) {
 	return pgInstance, err
 }
 
-func (s *PSQLSaver) Exec(query string, data ...interface{}) (string, error) {
+func (s *PSQLSaver) Exec(query string, data ...any) (string, error) {
 	s.logger.Debug("psql", "executing", query, "args", data)
-	st, err := s.db.Exec(context.Background(), query, data)
+	st, err := s.db.Exec(context.Background(), query, data...)
 	if err != nil {
 		s.logger.Error("psql", "failed", query, "error", err)
 	}
@@ -47,7 +47,7 @@ func (s *PSQLSaver) Exec(query string, data ...interface{}) (string, error) {
 
 func (s *PSQLSaver) QueryExists(query string, result any, data ...interface{}) (interface{}, error) {
 	s.logger.Debug("psql", "executing", query, "args", data)
-	row := s.db.QueryRow(context.Background(), query, result)
+	row := s.db.QueryRow(context.Background(), query, data...)
 	err := row.Scan(result)
 	if err != nil {
 		s.logger.Error("psql", "failed", query, "error", err)

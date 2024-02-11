@@ -9,7 +9,7 @@ type PSQLOptions struct {
 	Logger    *slog.Logger
 }
 
-func NewPSQLOptions(setters []PSQLOption) *PSQLOptions {
+func NewPSQLOptions(setters ...PSQLOption) *PSQLOptions {
 	opts := &PSQLOptions{}
 
 	for _, setter := range setters {

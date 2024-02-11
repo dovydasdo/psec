@@ -3,6 +3,7 @@ package psec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	r "github.com/dovydasdo/psec/pkg/request_context"
@@ -94,7 +95,7 @@ func (c *PSEC) Start(limit int) error {
 			c.logger.Info("psec", "message", "Got nil error, collection complete, terminating")
 			return nil
 		case perrors.Blocked:
-			c.logger.Info("psec", "message", "Got blocked error, resetting and retrying, err: %v", err.Error())
+			c.logger.Info("psec", "message", "Got blocked error, resetting and retrying", "error", err.Error())
 			err = c.rctx.ChangeProxy()
 			if err != nil {
 				// If no proxies, terminate immediately
@@ -112,7 +113,7 @@ func (c *PSEC) Start(limit int) error {
 		}
 	}
 
-	c.logger.Info("psec", "message", "failed to successfully complete in %v attempts, terminating", limit)
+	c.logger.Info("psec", "message", fmt.Sprintf("failed to successfully complete in %v attempts, terminating", limit))
 
 	return nil
 }

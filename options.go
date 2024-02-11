@@ -13,7 +13,7 @@ type Options struct {
 	Logger            *slog.Logger
 }
 
-func NewOptions(setters []Option) *Options {
+func NewOptions(setters ...Option) *Options {
 	options := &Options{}
 
 	for _, setter := range setters {
