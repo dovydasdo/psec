@@ -17,21 +17,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-type UtilInterface interface {
-	ParseTime(timeStr string, isLast bool) (time.Time, error)
-	GetBlockList(letThrough []string, state *requestcontext.State) ([]string, error)
-	GetHostBlockList(letThrough []string, state *requestcontext.State) ([]string, error)
-	SaveBlockList(list map[string][]string, path string) error
-	LoadBlockList(path string) (map[string][]string, error)
-}
-
-type UtilContext struct {
-}
-
-func New() *UtilContext {
-	return &UtilContext{}
-}
-
 func ParseTime(timeStr string, isLast bool) (time.Time, error) {
 	nowTime := time.Now() //time.Parse("2006-01-02", timeStr)
 

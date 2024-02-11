@@ -10,7 +10,7 @@ type CDPOptions struct {
 	Logger        *slog.Logger
 }
 
-func NewCDPOptions(setters []CDPOption) *CDPOptions {
+func NewCDPOptions(setters ...CDPOption) *CDPOptions {
 	options := &CDPOptions{
 		// Defualts
 		BinPath:       "",

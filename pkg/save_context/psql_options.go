@@ -6,10 +6,10 @@ type PSQLOption func(opts *PSQLOptions)
 
 type PSQLOptions struct {
 	ConString string
-	Logger    slog.Logger
+	Logger    *slog.Logger
 }
 
-func NewPSQLOptions(setters []PSQLOption) *PSQLOptions {
+func NewPSQLOptions(setters ...PSQLOption) *PSQLOptions {
 	opts := &PSQLOptions{}
 
 	for _, setter := range setters {
@@ -19,7 +19,7 @@ func NewPSQLOptions(setters []PSQLOption) *PSQLOptions {
 	return opts
 }
 
-func WithLogger(logger slog.Logger) PSQLOption {
+func WithLogger(logger *slog.Logger) PSQLOption {
 	return func(opts *PSQLOptions) {
 		opts.Logger = logger
 	}

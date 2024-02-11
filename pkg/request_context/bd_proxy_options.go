@@ -8,7 +8,7 @@ type BDProxyOptions struct {
 	Password string
 }
 
-func NewBDProxyOptions(setters []BDProxyOption) *BDProxyOptions {
+func NewBDProxyOptions(setters ...BDProxyOption) *BDProxyOptions {
 	opts := &BDProxyOptions{}
 
 	// TODO: some validation that all of the required options are provided

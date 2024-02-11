@@ -1,12 +1,13 @@
 package psec
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	r "github.com/dovydasdo/psec/pkg/request_context"
 	sc "github.com/dovydasdo/psec/pkg/save_context"
-	uc "github.com/dovydasdo/psec/pkg/util_context"
 	perrors "github.com/dovydasdo/psec/util/errors"
 )
 
@@ -15,7 +16,6 @@ type ExtractionFunc func(c r.Loader, s sc.Saver) error
 type PSEC struct {
 	rctx   r.Loader
 	sctx   sc.Saver
-	uctx   uc.UtilInterface
 	cFunc  ExtractionFunc
 	logger *slog.Logger
 }
@@ -48,7 +48,11 @@ func New(options *Options) *PSEC {
 				// only single for now
 				break
 			}
-			ec.sctx = sc.NewPSQLSaver(v)
+			var err error
+			ec.sctx, err = sc.NewPSQLSaver(context.TODO(), v)
+			if err != nil {
+				ec.logger.Error("psec", "message", "failed to get psql saver", "error", err)
+			}
 		default:
 			ec.logger.Warn("init", "message", "provided saver is not supported")
 		}
@@ -91,7 +95,7 @@ func (c *PSEC) Start(limit int) error {
 			c.logger.Info("psec", "message", "Got nil error, collection complete, terminating")
 			return nil
 		case perrors.Blocked:
-			c.logger.Info("psec", "message", "Got blocked error, resetting and retrying, err: %v", err.Error())
+			c.logger.Info("psec", "message", "Got blocked error, resetting and retrying", "error", err.Error())
 			err = c.rctx.ChangeProxy()
 			if err != nil {
 				// If no proxies, terminate immediately
@@ -109,7 +113,7 @@ func (c *PSEC) Start(limit int) error {
 		}
 	}
 
-	c.logger.Info("psec", "message", "failed to successfully complete in %v attempts, terminating", limit)
+	c.logger.Info("psec", "message", fmt.Sprintf("failed to successfully complete in %v attempts, terminating", limit))
 
 	return nil
 }
