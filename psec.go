@@ -11,7 +11,7 @@ import (
 	perrors "github.com/dovydasdo/psec/util/errors"
 )
 
-type ExtractionFunc func(c r.Loader, s sc.Saver) error
+type ExtractionFunc func(c r.Loader, s sc.Saver, l *slog.Logger) error
 
 type PSEC struct {
 	rctx   r.Loader
@@ -87,7 +87,7 @@ func (c *PSEC) Start(limit int) error {
 
 	// TODO: allow custom actions from errors
 	for i := 0; i < limit; i++ {
-		err := c.cFunc(c.rctx, c.sctx)
+		err := c.cFunc(c.rctx, c.sctx, c.logger)
 
 		switch v := err.(type) {
 		case nil:

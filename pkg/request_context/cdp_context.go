@@ -68,7 +68,6 @@ func (c *CDPContext) Initialize() error {
 
 	cdpCtx, cf := chromedp.NewContext(allocatorContext)
 
-	c.binPath = c.binPath
 	c.cancel = cf
 	c.ctx = cdpCtx
 	c.allocator = allocatorContext
