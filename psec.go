@@ -72,6 +72,22 @@ func New(options *Options) *PSEC {
 	return ec
 }
 
+func (c *PSEC) AddSaver(s sc.Saver) error {
+	if c.sctx != nil {
+		return errors.New("for now only one saver is supported")
+	}
+	c.sctx = s
+	return nil
+}
+
+func (c *PSEC) AddRequestAgent(r r.Loader) error {
+	if c.rctx != nil {
+		return errors.New("for now only one loader is supported")
+	}
+	c.rctx = r
+	return nil
+}
+
 func (c *PSEC) InitRequestContext() error {
 	return c.rctx.Initialize()
 }

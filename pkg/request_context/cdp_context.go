@@ -302,6 +302,8 @@ func (c *CDPContext) Do(ins ...interface{}) ([]Result, error) {
 				Error:    err,
 			}
 
+			c.logger.Debug("cdp.do", "result", res.Type)
+
 			result = append(result, res)
 
 			if err != nil {

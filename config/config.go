@@ -7,7 +7,9 @@ import (
 )
 
 type Conf struct {
-	DB ConfDB
+	DB         ConfDB
+	NATSFile   string `env:"NATS_CREDS"`
+	NATSServer string `env:"NATS_SERVER"`
 }
 
 type ConfDB struct {
